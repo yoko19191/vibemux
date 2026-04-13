@@ -6,6 +6,7 @@
   import Shelf from "./lib/Shelf.svelte";
   import NewSessionPanel from "./lib/NewSessionPanel.svelte";
   import SettingsPanel from "./lib/SettingsPanel.svelte";
+  import SessionSearch from "./lib/SessionSearch.svelte";
   import { onReplayStart, onReplayChunk, onReplayEnd, cancelReplay } from "./lib/terminalReplay";
   import type { MuxEvent, SessionSnapshot } from "./lib/types";
 
@@ -15,6 +16,7 @@
   let navMode = $state(false);
   let showNewSession = $state(false);
   let showSettings = $state(false);
+  let showSearch = $state(false);
   let homeCwd = $state("/");
   let terminalApis: Map<string, { writeOutput: (data: string) => void }> = new Map();
   let restoringSessionIds: Set<string> = $state(new Set());
@@ -221,6 +223,20 @@
           e.preventDefault();
         }
         break;
+      case "/":
+        showSearch = true;
+        navMode = false;
+        e.preventDefault();
+        break;
+    }
+  }
+
+  function handleSearchSelect(sessionId: string, thermal: "Hot" | "Warm") {
+    showSearch = false;
+    if (thermal === "Hot") {
+      handleFocusSession(sessionId);
+    } else {
+      recallSession(sessionId);
     }
   }
 
@@ -340,6 +356,14 @@
 
   {#if showSettings}
     <SettingsPanel onClose={() => (showSettings = false)} />
+  {/if}
+
+  {#if showSearch}
+    <SessionSearch
+      sessions={sessions}
+      onSelect={handleSearchSelect}
+      onClose={() => (showSearch = false)}
+    />
   {/if}
 
   <button class="settings-btn" class:shelf-offset={warmSessions.length > 0} onclick={() => (showSettings = true)}>⚙</button>
