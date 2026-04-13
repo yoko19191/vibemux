@@ -1,0 +1,396 @@
+# Ralph Progress - Vibemux MVP
+# Branch: ralph/vibemux-mvp
+# Started: 2026-04-13
+
+## Codebase Patterns
+- xterm packages are scoped: `@xterm/xterm`, `@xterm/addon-fit`, `@xterm/addon-webgl` (not the old `xterm` package)
+- Tauri 2 icons must be RGBA PNGs (use `magick -size NxN xc:'#color' -type TrueColorAlpha PNG32:file.png`)
+- Tauri 2 `app` config does NOT have a `title` field — title goes on individual windows
+- Frontend is at `apps/desktop/`, Rust backend at `apps/desktop/src-tauri/`
+- Svelte typecheck: `npm run check` from `apps/desktop/`
+- Rust typecheck: `cargo check` from `apps/desktop/src-tauri/`
+- Rust lib crate name is `vibemux_desktop_lib`
+
+## 2026-04-13 - US-001
+- Scaffolded Tauri 2 + Svelte 5 project under apps/desktop/
+- Created Rust backend with src-tauri/ (Cargo.toml, main.rs, lib.rs, build.rs, tauri.conf.json)
+- Frontend with Svelte 5.55, @xterm/xterm 6.0, @xterm/addon-fit 0.11, @xterm/addon-webgl 0.19
+- App.svelte renders placeholder 'Vibemux' heading
+- Both svelte-check and cargo check pass
+- Files changed: .gitignore, apps/desktop/** (25 files)
+- **Learnings for future iterations:**
+  - xterm has been renamed to scoped packages (@xterm/*) — old `xterm` 5.5+ doesn't exist on npm
+  - Tauri 2 `app` config schema doesn't accept `title` at the app level, only on windows
+  - Tauri 2 build macro requires RGBA PNG icons — plain RGB PNGs cause compile errors
+  - `magick` (not `convert`) is the correct ImageMagick v7 command on macOS
+---
+
+## 2026-04-13 - US-002
+- Defined all Rust data models in src-tauri/src/models.rs
+- Session, Workspace structs; SessionCommand, ThermalState, ProcessState, AttentionState, ColorToken enums
+- Added uuid (v4, serde) and chrono (serde) crate dependencies
+- All types derive Serialize, Deserialize, Clone, Debug
+- cargo check passes
+- Files changed: Cargo.toml, Cargo.lock, src/lib.rs, src/models.rs
+- **Learnings for future iterations:**
+  - Models live in `src-tauri/src/models.rs`, exported via `pub mod models` in lib.rs
+  - uuid crate needs features = ["v4", "serde"] for generation + serialization
+  - chrono needs features = ["serde"] for DateTime serialization
+---
+
+## 2026-04-13 - US-003
+- Implemented OutputRingBuffer in src-tauri/src/ring_buffer.rs
+- VecDeque-based ring buffer with max_lines (default 10,000) and max_bytes (default 20MB) limits
+- Monotonically increasing seq numbers, push/eviction/range query support
+- 7 unit tests all passing: push_and_get_all, current_seq, get_range, eviction_by_max_lines, eviction_by_max_bytes, get_range_after_eviction, monotonic_seq
+- Files changed: src/lib.rs, src/ring_buffer.rs
+- **Learnings for future iterations:**
+  - New modules go in `src-tauri/src/<module>.rs` and are registered via `pub mod <module>` in lib.rs
+  - VecDeque is the right choice for ring buffers — O(1) push_back and pop_front
+  - Tests live inline in the same file under `#[cfg(test)] mod tests`
+---
+
+## 2026-04-13 - US-004
+- Implemented PtyHost in src-tauri/src/pty_host.rs wrapping portable-pty
+- spawn() validates cwd and program existence, creates PTY with given size
+- Async read loop via tokio::task::spawn_blocking sends output through mpsc channel
+- write(), resize(), kill(), graceful_close() methods implemented
+- Exit status monitoring via separate blocking task
+- Signal handling via libc (SIGHUP for graceful, SIGKILL for force)
+- Files changed: Cargo.toml, Cargo.lock, src/lib.rs, src/pty_host.rs
+- **Learnings for future iterations:**
+  - portable-pty uses blocking I/O — wrap reads in tokio::task::spawn_blocking
+  - Must drop slave side of PTY pair after spawning child
+  - libc crate needed for POSIX signal constants (SIGHUP, SIGKILL)
+  - `which` crate validates program existence in PATH
+  - portable-pty's ExitStatus doesn't expose raw exit code on all platforms
+---
+
+## 2026-04-13 - US-005
+- Implemented SessionManager in src-tauri/src/session_manager.rs
+- create_session() spawns PTY, assigns cycling color, routes to hot/warm based on 6-session limit
+- write_to_session() and resize_session() forward to PTY
+- Output routing task writes to OutputRingBuffer and emits MuxEvent::SessionOutput
+- Exit monitoring task detects process exit and emits MuxEvent::SessionExited
+- MuxEvent enum defined for SessionOutput and SessionExited events
+- Files changed: src/lib.rs, src/session_manager.rs
+- **Learnings for future iterations:**
+  - SessionManager uses tokio::sync::Mutex for async-safe OutputRingBuffer access
+  - MuxEvent is the event bus pattern — all session events flow through mpsc::UnboundedSender<MuxEvent>
+  - Color cycling uses modulo over COLOR_CYCLE array (8 colors)
+  - MAX_HOT_SESSIONS = 6; overflow goes to warm_session_ids
+---
+
+## 2026-04-13 - US-006
+- Wired Tauri commands in src-tauri/src/commands.rs
+- session_create accepts CreateSessionPayload (camelCase), returns SessionSnapshot
+- session_write and session_resize forward to SessionManager
+- workspace_get_snapshot returns WorkspaceSnapshot with all session snapshots
+- AppState = Arc<Mutex<SessionManager>> managed by Tauri
+- lib.rs wires commands via generate_handler! and manages state
+- Files changed: src/commands.rs (new), src/lib.rs
+- **Learnings for future iterations:**
+  - Tauri commands use `State<'_, AppState>` for dependency injection
+  - Use `#[serde(rename_all = "camelCase")]` for JS-friendly payloads
+  - Tauri command return types must be `Result<T, String>` for error handling
+  - AppState pattern: Arc<Mutex<SessionManager>> for thread-safe async access
+---
+
+## 2026-04-13 - US-007
+- Created event bridge in src-tauri/src/events.rs
+- FrontendEvent enum with sessionCreated, sessionOutput, sessionExited, sessionUpdated variants
+- Event batching at 12ms intervals using tokio::select! with interval timer
+- start_event_bridge() consumes MuxEvent channel and emits Tauri "mux-event" events
+- Helper functions emit_session_created() and emit_session_updated() for direct emission
+- Frontend TypeScript types in src/lib/types.ts: MuxEvent, SessionSnapshot, WorkspaceSnapshot, ProcessState, AttentionState, ColorToken, ThermalState
+- lib.rs wires event bridge via .setup() callback
+- Files changed: src-tauri/src/events.rs (new), src-tauri/src/lib.rs, src/lib/types.ts (new)
+- **Learnings for future iterations:**
+  - Tauri 2 uses `app.handle().clone()` in setup callback, not `app.handle()`
+  - Tauri 2 event emission: `app_handle.emit("event-name", &payload)` via `Emitter` trait
+  - tokio::select! is the right pattern for batching — combine channel recv with interval tick
+  - Frontend types should mirror Rust serde output exactly (camelCase field names)
+---
+
+## 2026-04-13 - US-008
+- Built TerminalPane.svelte in src/lib/ with xterm.js integration
+- xterm.js Terminal with WebGL renderer (canvas fallback), FitAddon, 10k scrollback
+- Theme: background #111111, foreground #d9d4c7, cursor #ff6b57
+- Keystrokes sent to backend via session_write Tauri command
+- ResizeObserver triggers fit + session_resize on container size changes
+- Proper cleanup on component destroy (dispose terminal, disconnect observer)
+- Exported writeOutput() method for routing session output
+- Added @tauri-apps/api dependency
+- Files changed: package.json, package-lock.json, src/lib/TerminalPane.svelte (new)
+- **Learnings for future iterations:**
+  - @xterm/xterm 6.0 uses `new Terminal()` — no need for `@xterm/xterm/css` import in Svelte
+  - WebglAddon needs `allowProposedApi: true` in Terminal options
+  - FitAddon.proposeDimensions() returns cols/rows for resize commands
+  - Svelte 5 uses `$props()` for component props, not `export let`
+---
+
+## 2026-04-13 - US-009
+- Rewrote App.svelte to auto-create shell session on mount
+- Calls session_create with default shell, home directory cwd, auto-generated name
+- MuxEvent listener via Tauri listen() routes sessionOutput to TerminalPane
+- TerminalPane updated to use onReady callback pattern (Svelte 5 compatible) instead of export function
+- Error state displays user-friendly message, loading state while session creates
+- Global body styles set to match terminal background
+- Files changed: src/App.svelte, src/lib/TerminalPane.svelte
+- **Learnings for future iterations:**
+  - Svelte 5 doesn't support `export function` for component methods — use callback props (onReady pattern)
+  - Tauri 2 listen() returns an unlisten function for cleanup
+  - @tauri-apps/api/path provides homeDir() for cross-platform home directory
+  - MuxEvent routing: match sessionId in event payload to route output to correct terminal
+---
+
+## 2026-04-13 - US-010
+- Added session_focus, session_close, session_kill to SessionManager and Tauri commands
+- focus_session() sets focused_session_id on workspace
+- close_session() kills PTY, removes session from workspace, auto-focuses next session
+- kill_session() immediately kills PTY and removes session
+- remove_session_from_workspace() helper handles hot/warm list cleanup and focus fallback
+- Wired 3 new commands in lib.rs generate_handler!
+- Files changed: src/session_manager.rs, src/commands.rs, src/lib.rs
+- **Learnings for future iterations:**
+  - When removing a session, must clean up both hot_session_ids and warm_session_ids
+  - Focus fallback: prefer first hot session, then first warm session
+  - Tauri commands that mutate state need `let mut manager = state.lock().await`
+---
+
+## 2026-04-13 - US-011
+- Built Deck layout: Deck.svelte, DeckPane.svelte, deckLayout.ts
+- deckLayout.ts calculates widths: focused pane gets 720px min, peripherals split remaining
+- DeckPane.svelte renders colored border per ColorToken, reduced opacity for peripheral panes
+- Deck.svelte uses ResizeObserver for container width, passes layouts to DeckPanes
+- App.svelte updated to use Deck with multi-session support and session focus handling
+- Files changed: src/App.svelte, src/lib/Deck.svelte (new), src/lib/DeckPane.svelte (new), src/lib/deckLayout.ts (new)
+- **Learnings for future iterations:**
+  - Svelte 5 `$derived()` for reactive computed values (replaces `$:` reactive statements)
+  - ResizeObserver in Deck tracks container width for layout recalculation
+  - ColorToken → hex color mapping lives in DeckPane component
+  - terminalApis Map in App.svelte routes output to correct terminal by sessionId
+---
+
+## 2026-04-13 - US-012
+- Built NewSessionPanel.svelte modal with form fields for session creation
+- Fields: name, cwd (with defaultCwd prop), command type (shell/command radio), program, args
+- Submit calls session_create, displays inline error on failure, closes on success
+- Cancel button and Escape key close the panel
+- Used $derived.by() for cwd to properly reference defaultCwd prop reactively
+- Files changed: src/lib/NewSessionPanel.svelte (new)
+- **Learnings for future iterations:**
+  - Svelte 5 warns when $state() captures a prop value directly — use $derived.by() instead
+  - For derived values that need user override, use a nullable override state + $derived.by fallback
+  - Modal overlay pattern: fixed inset-0 with stopPropagation on inner panel click
+---
+
+## 2026-04-13 - US-016
+- Drag-and-drop reorder was already fully implemented from prior iterations
+- DeckPane.svelte: drag handle (top colored bar, draggable=true), drag-over outline indicator, ondragstart/ondragover/ondrop props
+- Deck.svelte: handleDragStart/handleDragOver/handleDrop logic, calls session_reorder Tauri command with reordered IDs
+- session_manager.rs: reorder_hot_sessions() validates all IDs are hot sessions, replaces hot_session_ids vec
+- commands.rs: session_reorder command parses UUIDs, delegates to reorder_hot_sessions
+- lib.rs: session_reorder registered in generate_handler!
+- Files changed: (no new changes needed — all already in place)
+- **Learnings for future iterations:**
+  - HTML5 drag-and-drop: set e.dataTransfer.effectAllowed = "move" on dragstart, call e.preventDefault() on dragover to allow drop
+  - dragover/dragleave on the drop target manage visual indicator state (dragOver $state)
+  - reorder_hot_sessions validates length matches to prevent partial reorders
+---
+
+## 2026-04-13 - US-017
+- Added MuxEvent::SessionParked variant to session_manager.rs
+- Added park_session() to SessionManager: moves session from hot_session_ids to warm_session_ids, sets thermal_state to Warm, shifts focus to next hot session, emits SessionParked event
+- Added session_park Tauri command in commands.rs
+- Registered session_park in lib.rs generate_handler!
+- Added FrontendEvent::SessionParked variant in events.rs, wired in convert_event()
+- Added sessionParked type to MuxEvent union in types.ts
+- App.svelte: handles sessionParked event (updates thermalState in local sessions, shifts focus), adds parkCurrentSession() function, B key in Navigation Mode triggers park, nav hint updated
+- Files changed: src-tauri/src/session_manager.rs, src-tauri/src/commands.rs, src-tauri/src/lib.rs, src-tauri/src/events.rs, src/lib/types.ts, src/App.svelte
+- **Learnings for future iterations:**
+  - Park does NOT kill the PTY — only moves session between hot/warm lists and updates thermal_state
+  - Frontend must filter Deck to hot sessions only when park is implemented (warm sessions go to Shelf in US-018)
+  - MuxEvent variants need matching FrontendEvent variants and convert_event() arms
+---
+
+## 2026-04-13 - US-018
+- Created ShelfCard.svelte: color dot, session name, attention badge (Active=blue dot, NeedsInput=yellow, Failed=red, Done=gray), short cwd, relative time
+- Created Shelf.svelte: fixed bottom bar, horizontal scroll, SHELF label, renders ShelfCard per warm session
+- App.svelte: added hotSessions/warmSessions $derived, Deck now uses hotSessions only, Shelf renders warmSessions, nav indicator offsets 62px when shelf visible
+- Files changed: src/lib/ShelfCard.svelte (new), src/lib/Shelf.svelte (new), src/App.svelte
+- **Learnings for future iterations:**
+  - Shelf height is ~62px — nav indicator needs bottom: 62px offset when shelf is visible
+  - Use class:shelf-offset on nav-indicator to conditionally offset
+  - hotSessions/warmSessions derived from sessions array by thermalState filter
+---
+
+## 2026-04-13 - US-019
+- Added MuxEvent::ReplayStart/ReplayChunk/ReplayEnd variants to session_manager.rs
+- Added recall_session() to SessionManager: moves warm→hot, emits replay events from ring buffer via tokio::spawn
+- Added session_recall Tauri command in commands.rs
+- Registered session_recall in lib.rs generate_handler!
+- Added FrontendEvent::ReplayStart/ReplayChunk/ReplayEnd variants in events.rs, wired in convert_event()
+- Added replay event types to MuxEvent union in types.ts
+- App.svelte: handles replayStart (updates thermalState to Hot, sets focus), replayChunk (writes to terminal), J/K/Enter shelf navigation in Nav Mode, selectedShelfIdx state, recallSession() function
+- Shelf.svelte: added selectedIdx prop, highlights selected card with blue outline
+- Files changed: src-tauri/src/session_manager.rs, src-tauri/src/commands.rs, src-tauri/src/lib.rs, src-tauri/src/events.rs, src/lib/types.ts, src/App.svelte, src/lib/Shelf.svelte
+- **Learnings for future iterations:**
+  - Replay events are emitted from a tokio::spawn task — ring buffer entries are cloned before spawning
+  - selectedShelfIdx must be reset to null when navMode exits or recall is triggered
+  - Switch statement closing brace must match handleKeydown function brace — easy to miss when adding cases
+---
+
+## 2026-04-13 - US-020
+- Created terminalReplay.ts: onReplayStart/onReplayChunk/onReplayEnd/cancelReplay/isReplaying exports
+- Chunked writes: 4KB per frame via setTimeout(0) to avoid UI freeze
+- Restoring indicator: setTimeout(200ms) triggers onRestoring(true) callback if replay still active
+- App.svelte: imports replay module, restoringSessionIds $state Set, updated event handler to use replay module, cancelReplay on sessionExited
+- Files changed: src/lib/terminalReplay.ts (new), src/App.svelte
+- **Learnings for future iterations:**
+  - setTimeout(0) yields to browser event loop between chunks — prevents UI freeze on large replays
+  - restoringSessionIds is a Set<string> in $state — must reassign (new Set(...)) to trigger reactivity
+  - cancelReplay on sessionExited prevents stale replay state
+---
+
+## 2026-04-13 - US-021
+- Added MuxEvent::AttentionChanged variant to session_manager.rs
+- Added ManagedSession.thermal_state and .attention_state as Arc<Mutex<...>> shared state
+- Updated create_session to create shared state and pass to route_output
+- route_output detects attention for warm sessions: NeedsInput patterns first, then Failed, then Active for new output
+- monitor_exit emits AttentionChanged (Done for exit 0, Failed for non-zero/killed) before SessionExited
+- detect_attention_state() free function with NeedsInput and Failed pattern matching
+- Added FrontendEvent::AttentionChanged in events.rs, wired in convert_event()
+- Added attentionChanged type to MuxEvent union in types.ts
+- App.svelte: handles attentionChanged event, updates session attentionState in local state
+- Files changed: src-tauri/src/session_manager.rs, src-tauri/src/events.rs, src/lib/types.ts, src/App.svelte
+- **Learnings for future iterations:**
+  - NeedsInput patterns must be checked before Failed to avoid false positives (e.g. "error" in "press enter")
+  - Shared Arc<Mutex<ThermalState>> allows route_output task to check current thermal state without holding SessionManager lock
+  - detect_attention_state returns None for "no special pattern" — caller handles Active promotion
+---
+
+## 2026-04-13 - US-022
+- Added rename_session() and set_session_color() to SessionManager, emit MuxEvent::SessionUpdated
+- Added MuxEvent::SessionUpdated variant, wired in events.rs convert_event()
+- Added session_rename and session_set_color Tauri commands in commands.rs
+- Registered both commands in lib.rs generate_handler!
+- DeckPane.svelte: added pane-header with session name, isRenaming prop, inline rename input (Enter confirms, Escape cancels), $state(null) for renameInput ref
+- Deck.svelte: added renamingSessionId prop, passes isRenaming/onRenameConfirm/onRenameCancel to DeckPane
+- App.svelte: added renamingSessionId state, R key in Nav Mode activates rename, handleRenameConfirm/handleRenameCancel handlers, passes rename props to Deck
+- Files changed: src-tauri/src/session_manager.rs, src-tauri/src/commands.rs, src-tauri/src/lib.rs, src-tauri/src/events.rs, src/lib/DeckPane.svelte, src/lib/Deck.svelte, src/App.svelte
+- **Learnings for future iterations:**
+  - Svelte 5: bind:this on input must be $state(null) not plain null to avoid non_reactive_update warning
+  - $effect captures prop values — use renameValue = sessionName inside $effect, not as $state(sessionName) initializer
+  - Inline rename input needs e.stopPropagation() on click to prevent DeckPane focus handler from firing
+---
+
+## 2026-04-13 - US-023
+- Created config.rs with UserConfig struct (terminal/theme/layout/shell/keys sections with defaults)
+- load_config() reads TOML from platform path, falls back to defaults on error/missing
+- save_config() writes atomically via temp file + rename
+- config_get and config_update Tauri commands in commands.rs (config_update uses JSON merge)
+- Added toml = "0.8" to Cargo.toml
+- lib.rs: loads config on startup, manages ConfigState = Arc<Mutex<UserConfig>>
+- Files changed: src-tauri/Cargo.toml, src-tauri/src/config.rs (new), src-tauri/src/commands.rs, src-tauri/src/lib.rs
+- **Learnings for future iterations:**
+  - toml crate: use #[serde(default)] on all config structs for missing-field tolerance
+  - Atomic write: write to .toml.tmp then std::fs::rename to avoid partial writes
+  - config_update uses JSON merge (not TOML merge) — serialize to JSON, merge, deserialize back
+  - ConfigState uses std::sync::Mutex (not tokio) since config_get/config_update are sync commands
+---
+
+## 2026-04-13 - US-024
+- Created SettingsPanel.svelte with Terminal/Theme/Layout tabs
+- Terminal tab: font_family, font_size, line_height inputs
+- Theme tab: color pickers + text inputs for all 20 theme colors
+- Layout tab: focused_pane_width, animation_ms, max_hot_sessions
+- Each change calls config_update immediately (no save button needed)
+- Settings ⚙ button in bottom-right corner, shelf-offset when shelf visible
+- App.svelte: added showSettings state, SettingsPanel import, settings button
+- Files changed: src/lib/SettingsPanel.svelte (new), src/App.svelte
+- **Learnings for future iterations:**
+  - Color inputs: type="color" only accepts 6-char hex — use .slice(0,7) to strip alpha
+  - onchange (not oninput) for text/number inputs to avoid firing on every keystroke
+  - oninput for color picker to get real-time preview
+---
+
+## 2026-04-13 - US-025
+- TerminalPane.svelte: added copy/paste keyboard shortcuts (Cmd/Ctrl+C/V), right-click context menu
+- onSelectionChange tracks hasSelection state — Copy disabled when no selection
+- Context menu: Copy, Paste, Clear Screen (sends \x0c)
+- Context menu uses overlay div to close on outside click
+- Files changed: src/lib/TerminalPane.svelte
+- **Learnings for future iterations:**
+  - terminal.getSelection() returns empty string when nothing selected
+  - onSelectionChange fires on every selection change — use it to track hasSelection
+  - Clear Screen: \x0c (form feed) is the standard escape sequence
+  - Context menu position: use e.clientX/clientY for fixed positioning
+---
+
+## 2026-04-13 - US-026
+- Added WebLinksAddon to TerminalPane.svelte for clickable URLs
+- Added open_url Tauri command using std::process::Command (open/xdg-open/cmd)
+- Added session_set_title Tauri command + set_session_title() in SessionManager
+- OSC 0/2 handlers in TerminalPane call session_set_title on title change
+- DeckPane.svelte: added terminalTitle prop, displayName derived (terminalTitle || sessionName)
+- Deck.svelte: added getTerminalTitle() helper, passes terminalTitle to DeckPane
+- App.svelte: handles sessionUpdated event by refreshing workspace snapshot
+- Files changed: src-tauri/src/commands.rs, src-tauri/src/session_manager.rs, src-tauri/src/lib.rs, src/lib/TerminalPane.svelte, src/lib/DeckPane.svelte, src/lib/Deck.svelte, src/App.svelte
+- **Learnings for future iterations:**
+  - @xterm/addon-web-links WebLinksAddon constructor takes a click handler (e, uri) => void
+  - terminal.parser.registerOscHandler(0, handler) intercepts OSC 0 (icon+title) sequences
+  - tauri-plugin-shell is NOT in Cargo.toml — use std::process::Command with open/xdg-open/cmd
+  - sessionUpdated event should trigger a workspace_get_snapshot refresh to pick up new title
+---
+
+## 2026-04-13 - US-027
+- Created SessionSearch.svelte: overlay with text input, filtered results list, keyboard navigation
+- Filters sessions by name, cwd, terminalTitle in real-time
+- Results show color dot, name, thermal badge, short cwd
+- Arrow keys navigate, Enter selects (hot→focus, warm→recall), Escape closes
+- Wired / key in App.svelte handleKeydown (Nav Mode + /)
+- Added handleSearchSelect() in App.svelte
+- Files changed: src/lib/SessionSearch.svelte (new), src/App.svelte
+- **Learnings for future iterations:**
+  - $derived.by() needed when filter depends on $state query — plain $derived([]) works too
+  - $effect(() => { selectedIdx = 0; }) resets selection when filtered list changes
+  - Use svelte-ignore a11y_no_noninteractive_element_interactions on <li> with onclick
+---
+
+## 2026-04-13 - US-028
+- Created HelpOverlay.svelte: centered modal with table of all Nav Mode keybindings
+- prefixKey prop shows platform-specific prefix (Cmd+Space / Ctrl+Space)
+- Escape or ? closes the overlay (svelte:window onkeydown handler)
+- Wired ? key in App.svelte handleKeydown (Nav Mode + ?)
+- Files changed: src/lib/HelpOverlay.svelte (new), src/App.svelte
+- **Learnings for future iterations:**
+  - Use $derived([...]) for arrays that reference props to avoid state_referenced_locally warning
+  - $derived([...]) syntax: let x = $derived([item1, item2]); — closing ]) not ];
+  - svelte:window onkeydown in component handles global keys without polluting App.svelte
+---
+
+## 2026-04-13 - US-029
+- Added load_config_with_error() to config.rs returning (UserConfig, Option<String>)
+- Added ConfigErrorState = Arc<Mutex<Option<String>>> type
+- Added config_get_error Tauri command returning Option<String>
+- lib.rs: uses load_config_with_error(), manages ConfigErrorState, registers config_get_error
+- App.svelte: checks config_get_error on startup, shows dismissible yellow warning banner
+- Files changed: src-tauri/src/config.rs, src-tauri/src/commands.rs, src-tauri/src/lib.rs, src/App.svelte
+- **Learnings for future iterations:**
+  - Split load_config() into load_config_with_error() returning tuple for error propagation
+  - ConfigErrorState is Arc<Mutex<Option<String>>> — same pattern as ConfigState
+  - Banner uses position: fixed; top: 0 with z-index: 300 to overlay everything
+---
+
+## 2026-04-13 - US-030
+- TerminalPane.svelte already had WebGL try/catch fallback from US-026
+- Added onRendererType callback prop to TerminalPane — fires 'webgl' or 'canvas' on init/context-loss
+- DeckPane.svelte: added rendererType $state, wires onRendererType from TerminalPane
+- DeckPane header shows "canvas" badge when rendererType === 'canvas'
+- Files changed: src/lib/TerminalPane.svelte, src/lib/DeckPane.svelte
+- **Learnings for future iterations:**
+  - WebGL fallback was already in place — US-030 mainly adds visibility (canvas badge)
+  - onContextLoss fires when GPU context is lost at runtime — dispose addon and update state
+  - Pass renderer type up via callback prop rather than binding — cleaner for one-way data flow
+---

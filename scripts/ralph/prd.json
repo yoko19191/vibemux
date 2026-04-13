@@ -1,540 +1,251 @@
 {
   "project": "Vibemux",
-  "branchName": "ralph/vibemux-mvp",
-  "description": "Vibemux MVP - Terminal multiplexer built with Tauri 2 + Rust + Svelte 5 + xterm.js. Milestones 1-5: basic shell session, Deck layout, Shelf/thermal model, config/terminal features, and cross-platform polish.",
+  "branchName": "ralph/ux-improvements",
+  "description": "Vibemux UX improvements: fix prefix key conflict (Ctrl+B default), add top titlebar with GUI buttons, first-launch onboarding wizard, and context menus/buttons on Deck panes and Shelf cards for full mouse operability.",
   "userStories": [
     {
-      "id": "US-001",
-      "title": "Scaffold Tauri 2 + Svelte 5 project",
-      "description": "As a developer, I want the base Tauri 2 + Svelte 5 project scaffolded so that we have a working app shell to build on.",
+      "id": "US-031",
+      "title": "Change default Prefix Key to Ctrl+B and make it config-driven",
+      "description": "As a macOS user, I want the default Prefix Key to not conflict with Spotlight so that I can use Navigation Mode without issues.",
       "acceptanceCriteria": [
-        "Tauri 2 app with Svelte 5 frontend is created under apps/desktop/",
-        "Rust backend has src-tauri/ with Cargo.toml, main.rs, lib.rs",
-        "Frontend has package.json with svelte 5, @sveltejs/vite-plugin-svelte, xterm, xterm-addon-fit, xterm-addon-webgl dependencies",
-        "App.svelte renders a placeholder 'Vibemux' heading",
-        "npm run tauri dev builds and launches the app window",
+        "Rust KeysConfig default value changed from 'cmd+space' to 'ctrl+b' in config.rs",
+        "New src/lib/keymap.ts with parsePrefixKey(configString) function that parses 'ctrl+b', 'cmd+space', 'ctrl+`', 'ctrl+a' etc. into { ctrlKey, metaKey, altKey, shiftKey, key } matcher object",
+        "parsePrefixKey handles: ctrl, cmd (maps to metaKey on macOS, ctrlKey elsewhere), alt, shift modifiers + any single key",
+        "parsePrefixKey handles backtick key: 'ctrl+`' matches e.key === '`' or e.code === 'Backquote'",
+        "App.svelte loads keys.prefix from config_get on mount and uses parsePrefixKey to dynamically bind the prefix key instead of hardcoded Cmd+Space / Ctrl+Space check",
+        "Nav Mode indicator bar displays the actual configured prefix key (e.g. 'Ctrl+B') instead of hardcoded text",
+        "HelpOverlay displays the actual configured prefix key via a prefixKey prop that reflects the real config value",
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "xterm packages are now scoped under @xterm/ (e.g. @xterm/xterm, @xterm/addon-fit, @xterm/addon-webgl). Tauri 2 icons must be RGBA PNGs."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-002",
-      "title": "Define Rust data models (Session, Workspace, enums)",
-      "description": "As a developer, I want the core Rust data models defined so that the backend has a type-safe foundation for session management.",
+      "id": "US-032",
+      "title": "Add top Titlebar with New Session, Search, and Settings buttons",
+      "description": "As a user, I want a toolbar at the top of the window with common action buttons so that I can operate without relying on keyboard shortcuts.",
       "acceptanceCriteria": [
-        "Session struct with fields: id (UUID), name, cwd, command, color, workspace_id, thermal_state, process_state, attention_state, terminal_title, created_at, updated_at, last_activity_at",
-        "SessionCommand enum with Shell { shell: String } and Command { program: String, args: Vec<String> } variants",
-        "ThermalState enum: Hot, Warm, Cold",
-        "ProcessState enum: Starting, Running, Exited { code: Option<i32> }, FailedToStart { message: String }, Killed",
-        "AttentionState enum: Normal, Active, NeedsInput, Failed, Done",
-        "ColorToken enum with 8 variants: Red, Orange, Yellow, Green, Cyan, Blue, Purple, Pink",
-        "Workspace struct with id, name, hot_session_ids, warm_session_ids, focused_session_id, layout",
-        "All types derive Serialize, Deserialize, Clone, Debug",
-        "Typecheck passes"
+        "New Titlebar.svelte component fixed at the top of the window",
+        "Titlebar height is 36px, background matches app theme (#111111 or slightly lighter), 1px bottom border separator",
+        "Left side shows current Workspace identifier: color dot + number (e.g. a colored circle + '1 Default'), clicking it allows inline rename",
+        "Right side button group (left to right): + button (New Session), magnifying glass button (Search), gear button (Settings)",
+        "Each button shows tooltip on hover with function name and keyboard shortcut (e.g. 'New Session (Ctrl+B, N)')",
+        "Tooltips display the actual configured prefix key from config, not hardcoded",
+        "Remove the existing floating gear button (settings-btn) from App.svelte bottom-right corner",
+        "App.svelte integrates Titlebar: Deck area height = 100vh minus titlebar height minus shelf height (if shelf visible)",
+        "Titlebar z-index prevents terminal content from overlapping it",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Models in src-tauri/src/models.rs. Uses uuid and chrono crates."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-003",
-      "title": "Implement OutputRingBuffer",
-      "description": "As a developer, I want a ring buffer that stores PTY output with monotonic seq numbers so that warm sessions can replay their output on recall.",
+      "id": "US-033",
+      "title": "Add onboarding_completed config field and detect_shells Tauri command",
+      "description": "As a developer, I want the backend support for onboarding (config field + shell detection) so that the frontend onboarding wizard has the data it needs.",
       "acceptanceCriteria": [
-        "OutputRingBuffer struct with max_lines (default 10_000) and max_bytes (default 20MB) limits",
-        "Each entry has a monotonically increasing seq number and the output data bytes",
-        "push() adds output, evicts oldest entries when limits exceeded",
-        "get_range(from_seq, to_seq) returns entries in the specified seq range",
-        "get_all() returns all buffered entries in seq order",
-        "current_seq() returns the latest seq number",
-        "Unit tests for push, eviction, and range queries",
+        "Add onboarding_completed: bool field to UserConfig in config.rs with #[serde(default)] defaulting to false",
+        "Existing configs without onboarding_completed field load successfully (serde default kicks in)",
+        "config_get returns onboarding_completed in the JSON response",
+        "config_update accepts onboarding_completed field and persists it",
+        "New detect_shells Tauri command: on macOS/Linux reads /etc/shells, filters to paths that exist on disk, returns Vec<String>",
+        "detect_shells on Windows checks for powershell.exe, pwsh.exe, cmd.exe existence and returns found paths",
+        "detect_shells is registered in the invoke_handler in lib.rs",
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Ring buffer in src-tauri/src/ring_buffer.rs. 7 unit tests covering push, eviction, range queries."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-004",
-      "title": "Implement PTY host (portable-pty wrapper)",
-      "description": "As a developer, I want a PTY host module that spawns and manages pseudo-terminal processes so that sessions can run shell commands.",
+      "id": "US-034",
+      "title": "Build Onboarding wizard — Prefix Key selection (Step 1)",
+      "description": "As a first-time Vibemux user, I want to choose my preferred Prefix Key on first launch so that keyboard shortcuts don't conflict with my habits.",
       "acceptanceCriteria": [
-        "PtyHost struct that wraps portable-pty to spawn a child process with given command, args, cwd, and initial size (cols, rows)",
-        "Async read loop that reads PTY output and sends it through a channel",
-        "write() method to send input data to the PTY",
-        "resize() method to update PTY dimensions",
-        "kill() method to send SIGKILL to the child process",
-        "Graceful close via SIGHUP with configurable timeout before kill",
-        "Reports process exit status (exit code or killed) through a channel",
-        "Validates cwd exists before spawning, returns descriptive error if not",
-        "Validates shell/program exists before spawning, returns descriptive error if not",
-        "Typecheck passes"
+        "New Onboarding.svelte component renders as a full-screen overlay",
+        "App.svelte checks onboarding_completed from config_get on mount; if false, shows Onboarding overlay instead of creating a session",
+        "Step 1 title: 'Choose your Navigation Key'",
+        "Explanation text: 'Press this key combo to enter Navigation Mode, where you can switch sessions, park, recall, and more.'",
+        "4 selectable option cards in a 2x2 grid: Ctrl+B (tmux style, Recommended), Ctrl+Space (Spacemacs style), Ctrl+` (Backtick, no conflicts), Ctrl+A (screen style)",
+        "Clicking an option highlights it (selected state with border color change)",
+        "Ctrl+B is pre-selected as the default/recommended option",
+        "Bottom has step indicator (Step 1 of 4 with dots), Skip link, and Next button",
+        "Clicking Next calls config_update to write keys.prefix and advances to step 2",
+        "Closing onboarding (X button or Escape) uses default values (ctrl+b) and sets onboarding_completed = true via config_update",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "PTY host in src-tauri/src/pty_host.rs. Uses portable-pty, tokio, libc for signal handling."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-005",
-      "title": "Implement SessionManager (create, write, resize)",
-      "description": "As a developer, I want a SessionManager that creates sessions, routes input/output, and manages session lifecycle so that the Tauri commands have a backend to call.",
+      "id": "US-035",
+      "title": "Build Onboarding wizard — Shell selection (Step 2)",
+      "description": "As a first-time user, I want to choose my default shell during onboarding so that sessions start with my preferred shell.",
       "acceptanceCriteria": [
-        "SessionManager struct holding a HashMap of sessions and a default Workspace",
-        "create_session() spawns PTY via PtyHost, creates Session with auto-assigned color (cycling through 8 colors), adds to workspace hot_session_ids, sets as focused",
-        "If hot sessions >= 6, new session goes to warm_session_ids instead",
-        "write_to_session() forwards input bytes to the session's PTY",
-        "resize_session() updates the session's PTY dimensions",
-        "Output from PTY is written to session's OutputRingBuffer with incrementing seq",
-        "Session output is emitted as MuxEvent::SessionOutput { session_id, data, seq }",
-        "Process exit is detected and updates ProcessState accordingly",
-        "Typecheck passes"
+        "Onboarding Step 2 title: 'Choose your default shell'",
+        "Calls detect_shells Tauri command to get available shells",
+        "Displays detected shells as selectable list items (e.g. /bin/zsh, /bin/bash, /bin/fish)",
+        "Current $SHELL value is pre-selected (matched against detect_shells results); falls back to first item if no match",
+        "Clicking a shell item highlights it as selected",
+        "Back button returns to Step 1, Skip link advances to Step 3 with default shell, Next button writes shell.default via config_update and advances to Step 3",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "SessionManager in src-tauri/src/session_manager.rs. Routes PTY output to ring buffer and emits MuxEvents."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-006",
-      "title": "Wire Tauri commands for session_create, session_write, session_resize",
-      "description": "As a developer, I want Tauri command handlers that bridge the frontend to the SessionManager so that the UI can create and interact with terminal sessions.",
+      "id": "US-036",
+      "title": "Build Onboarding wizard — Theme and Font selection (Step 3)",
+      "description": "As a first-time user, I want to choose a terminal theme and font during onboarding so that the app looks right from the start.",
       "acceptanceCriteria": [
-        "session_create Tauri command accepts CreateSessionPayload (name, cwd, command type, optional color), calls SessionManager, returns SessionSnapshot",
-        "session_write Tauri command accepts sessionId and data string, forwards to SessionManager",
-        "session_resize Tauri command accepts sessionId, cols, rows, forwards to SessionManager",
-        "workspace_get_snapshot Tauri command returns current WorkspaceSnapshot with all session snapshots",
-        "SessionSnapshot includes: id, name, cwd, color, thermalState, processState, attentionState, terminalTitle, lastActivityAt, lastOutputSummary",
-        "Errors return descriptive messages (which session, what went wrong, what user can do)",
-        "Tauri app state holds SessionManager wrapped in appropriate sync primitive",
-        "Typecheck passes"
+        "Onboarding Step 3 title: 'Customize your terminal'",
+        "Left side: 3 preset theme cards (Dark (default), Solarized Dark, Monokai) — clicking one selects it",
+        "Each preset theme includes full ANSI 16 color definitions (background, foreground, cursor, selection + black/red/green/yellow/blue/magenta/cyan/white + 8 bright variants) defined in a presetThemes.ts file",
+        "Right side: font family dropdown (monospace, JetBrains Mono, Fira Code, Menlo) + font size slider (10-20, default 14)",
+        "Bottom preview area shows a few lines of colored sample text (ANSI escape sequences rendered as colored spans or a mini terminal) that updates in real-time when theme or font changes",
+        "Dark theme is pre-selected by default",
+        "Back button returns to Step 2, Skip link advances to Step 4 with defaults, Next button writes theme.* (all ANSI colors) and terminal.font_family + terminal.font_size via config_update",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
       ],
       "priority": 6,
-      "passes": true,
-      "notes": "Tauri commands in src-tauri/src/commands.rs. AppState = Arc<Mutex<SessionManager>>."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-007",
-      "title": "Wire Tauri events for session output and lifecycle",
-      "description": "As a developer, I want the backend to emit Tauri events for session output and state changes so that the frontend can react in real-time.",
+      "id": "US-037",
+      "title": "Build Onboarding wizard — Completion page (Step 4) and App integration",
+      "description": "As a first-time user, I want to see a completion page with quick tips and then start using the app.",
       "acceptanceCriteria": [
-        "Backend emits 'mux-event' Tauri event with MuxEvent payload",
-        "session.created event emitted when a session is created, contains SessionSnapshot",
-        "session.output event emitted for PTY output, contains sessionId, data (string), seq (number)",
-        "session.exited event emitted when process exits, contains sessionId and exit code",
-        "session.updated event emitted when session metadata changes",
-        "Events are batched at 8-16ms intervals to avoid flooding the frontend",
-        "Frontend TypeScript types defined for MuxEvent, SessionSnapshot, ProcessState, AttentionState, ColorToken",
-        "Typecheck passes"
+        "Onboarding Step 4 title: 'You're all set!'",
+        "Shows the user's chosen prefix key in a tip: 'Press [prefix key] to enter Navigation Mode. Try creating a new session with [prefix key] then N.'",
+        "Start button closes onboarding, sets onboarding_completed = true via config_update",
+        "After onboarding closes, App.svelte proceeds to create the default session and show the terminal",
+        "On subsequent launches, onboarding_completed is true so onboarding is skipped entirely",
+        "Back button returns to Step 3",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
       ],
       "priority": 7,
-      "passes": true,
-      "notes": "Event bridge in src-tauri/src/events.rs. Batches at 12ms intervals. Frontend types in src/lib/types.ts."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-008",
-      "title": "Build single-session TerminalPane with xterm.js",
-      "description": "As a developer, I want a TerminalPane Svelte component that renders an xterm.js terminal and connects it to a backend session so that I can type commands and see output.",
+      "id": "US-038",
+      "title": "Build shared ContextMenu component",
+      "description": "As a developer, I want a reusable ContextMenu component so that DeckPane, ShelfCard, and TerminalPane can share the same context menu UI.",
       "acceptanceCriteria": [
-        "TerminalPane.svelte component creates an xterm.js Terminal instance with WebGL renderer (canvas fallback)",
-        "Component accepts sessionId prop and connects to the backend session",
-        "User keystrokes are sent to backend via session_write Tauri command",
-        "session.output events are written to the xterm instance",
-        "Terminal uses fit addon to fill its container and calls session_resize on size changes",
-        "Default theme applied: background #111111, foreground #d9d4c7, cursor #ff6b57",
-        "Scrollback set to 10,000 lines",
-        "xterm instance is properly disposed on component destroy",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
-      ],
-      "priority": 8,
-      "passes": true,
-      "notes": "TerminalPane.svelte in src/lib/. Uses @xterm/xterm 6.0, WebGL addon with canvas fallback, fit addon, ResizeObserver."
-    },
-    {
-      "id": "US-009",
-      "title": "Build App shell with auto-create first session",
-      "description": "As a developer, I want the App.svelte to automatically create a shell session on startup and display it in a TerminalPane so that the app is immediately usable.",
-      "acceptanceCriteria": [
-        "App.svelte calls session_create on mount with default shell, home directory as cwd, and auto-generated name",
-        "Created session's TerminalPane is rendered full-width",
-        "MuxEvent listener is set up to handle all event types",
-        "Session output events are routed to the correct TerminalPane by sessionId",
-        "Window resize triggers terminal resize",
-        "Error creating session displays a user-friendly error message in the UI",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
-      ],
-      "priority": 9,
-      "passes": true,
-      "notes": "App.svelte auto-creates shell session on mount, listens for mux-event, routes output to TerminalPane via onReady callback pattern."
-    },
-    {
-      "id": "US-010",
-      "title": "Add session_focus and session_close Tauri commands",
-      "description": "As a developer, I want focus and close commands so that the frontend can switch between sessions and close them.",
-      "acceptanceCriteria": [
-        "session_focus Tauri command sets the focused_session_id on the workspace and emits workspace.snapshot event",
-        "session_close Tauri command sends SIGHUP to the process, waits up to 5 seconds, then kills if still running",
-        "session_kill Tauri command immediately sends SIGKILL",
-        "Closed/killed sessions are removed from hot_session_ids or warm_session_ids",
-        "Session transitions to Cold state with appropriate ProcessState (Exited or Killed)",
-        "session.exited event is emitted with the exit code",
-        "workspace.snapshot event is emitted after session removal",
+        "New ContextMenu.svelte component that accepts: position ({x, y}), items array, and onClose callback",
+        "Each item has: label (string), onClick (function), optional color (string for text color, e.g. red for Kill), optional disabled (boolean), optional type ('separator' for divider lines)",
+        "Supports a 'submenu' item type: item with children array that renders as a nested menu on hover (used for color picker)",
+        "Menu style matches existing TerminalPane context menu: #1e1e1e background, #333 border, 6px border-radius, box-shadow",
+        "Clicking outside the menu calls onClose",
+        "Menu items have hover highlight (#3b82f620 background)",
+        "Disabled items have #555 text color and no hover effect",
+        "Separator renders as a 1px #2a2a2a horizontal line",
         "Typecheck passes"
       ],
-      "priority": 10,
-      "passes": true,
-      "notes": "session_focus, session_close, session_kill commands added. Sessions removed from workspace on close/kill."
+      "priority": 8,
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-011",
-      "title": "Build Deck layout with focused/peripheral panes",
-      "description": "As a developer, I want a horizontal Deck layout where the focused session gets the most width and peripheral sessions are compressed so that I can see multiple terminals at once.",
+      "id": "US-039",
+      "title": "Build ColorPicker submenu component",
+      "description": "As a developer, I want a color picker submenu that shows 8 preset color dots so that context menus can include a Change Color option.",
       "acceptanceCriteria": [
-        "Deck.svelte component renders hot sessions horizontally",
-        "Focused session pane gets configurable width (default 720px min), remaining width split among peripheral panes",
-        "Each DeckPane.svelte has a colored border matching the session's ColorToken",
-        "Focused pane border is full brightness, peripheral panes have reduced opacity (0.8)",
-        "Each pane contains a TerminalPane connected to its session",
-        "deckLayout.ts calculates widths based on container size, focused width, and session count",
-        "Pane width changes trigger session_resize for affected terminals",
+        "New ColorPicker.svelte component (or inline within ContextMenu submenu) that displays 8 color dots in a row: Red, Orange, Yellow, Green, Cyan, Blue, Purple, Pink",
+        "Each dot is a small circle (12-16px) with the corresponding color, hover shows a slightly larger size or ring",
+        "Clicking a dot calls an onSelect(colorToken) callback with the ColorToken string",
+        "Current session color is indicated (e.g. ring or checkmark on the active color)",
+        "Component can be embedded inside ContextMenu as a submenu panel",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-040",
+      "title": "Add DeckPane title bar action buttons (focused pane only)",
+      "description": "As a user, I want action buttons on the focused Deck Pane's title bar so that I can Park, Rename, or Close a session with the mouse.",
+      "acceptanceCriteria": [
+        "DeckPane.svelte pane-header right side shows action buttons only when isFocused is true AND pane is hovered",
+        "Button group (left to right): Park button (Unicode pin or down-arrow icon), Rename button (pencil icon), Close button (x icon)",
+        "Park button tooltip: 'Park to Shelf' with keyboard shortcut, click calls onPark callback",
+        "Rename button tooltip: 'Rename' with keyboard shortcut, click triggers inline rename mode (existing isRenaming logic)",
+        "Close button tooltip: 'Close' with keyboard shortcut, click calls onClose callback",
+        "Buttons use simple Unicode characters or inline SVG, no icon library added",
+        "Buttons have subtle hover background highlight",
+        "Buttons do not intercept terminal click/input events (they are in the header, not terminal-container)",
+        "Peripheral panes (isFocused=false) do NOT show these buttons",
+        "App.svelte passes onPark and onClose callbacks to Deck, which passes them to DeckPane",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-041",
+      "title": "Add DeckPane title bar right-click context menu",
+      "description": "As a user, I want a right-click menu on the Deck Pane title bar so that I can access all session management options with the mouse.",
+      "acceptanceCriteria": [
+        "Right-clicking on DeckPane .drag-handle or .pane-header area opens a ContextMenu",
+        "Menu items: 'Park to Shelf' (calls session_park), 'Rename' (enters inline rename), 'Change Color' (opens ColorPicker submenu), separator, 'Close' (calls session_close), 'Kill' (calls session_kill, red text)",
+        "Right-clicking the terminal content area still shows the existing Copy/Paste/Clear menu (unchanged)",
+        "Context menu uses the shared ContextMenu.svelte component",
+        "Change Color submenu shows 8 color dots, clicking one calls session_set_color",
+        "Menu closes when clicking outside or after selecting an action",
+        "Works on both focused and peripheral panes",
         "Typecheck passes",
         "Verify in browser using dev-browser skill"
       ],
       "priority": 11,
-      "passes": true,
-      "notes": "Deck.svelte, DeckPane.svelte, deckLayout.ts in src/lib/. App.svelte updated to use Deck with multi-session support."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-012",
-      "title": "Add New Session panel UI",
-      "description": "As a developer, I want a New Session creation panel so that I can create sessions with custom name, cwd, and command type.",
+      "id": "US-042",
+      "title": "Add ShelfCard right-click context menu",
+      "description": "As a user, I want a right-click menu on Shelf Cards so that I can Recall, Rename, Kill background sessions with the mouse.",
       "acceptanceCriteria": [
-        "NewSessionPanel.svelte modal/panel with fields: name (text input), cwd (text input with default to home dir), command type (Shell or Custom Command radio)",
-        "When Custom Command is selected, show program and args inputs",
-        "Submit button calls session_create with the form values",
-        "On success, panel closes and new session appears in Deck as focused",
-        "On error (invalid cwd, invalid shell), display the error message inline without closing the panel",
-        "Cancel button or Escape key closes the panel",
+        "Right-clicking a ShelfCard opens a ContextMenu (prevents default browser menu)",
+        "Menu items: 'Recall to Deck' (calls session_recall), 'Rename' (shows inline input or small prompt for new name, then calls session_rename), 'Change Color' (opens ColorPicker submenu with 8 dots, calls session_set_color), separator, 'Close' (calls session_close), 'Kill' (calls session_kill, red text)",
+        "Left-clicking ShelfCard still directly triggers Recall (existing behavior preserved)",
+        "Context menu uses the shared ContextMenu.svelte component",
+        "Shelf.svelte passes necessary callbacks (onRecall, onRename, onSetColor, onClose, onKill) from App.svelte",
+        "App.svelte adds handler functions for rename, set_color, close, kill on shelf sessions",
+        "Menu closes when clicking outside or after selecting an action",
         "Typecheck passes",
         "Verify in browser using dev-browser skill"
       ],
       "priority": 12,
-      "passes": true,
-      "notes": "NewSessionPanel.svelte in src/lib/. Modal with name, cwd, command type fields. Uses $derived.by for defaultCwd prop."
+      "passes": false,
+      "notes": ""
     },
     {
-      "id": "US-013",
-      "title": "Implement Navigation Mode (prefix key + keybindings)",
-      "description": "As a developer, I want a Navigation Mode activated by a prefix key so that I can use keyboard shortcuts to manage sessions without interfering with terminal input.",
+      "id": "US-043",
+      "title": "Migrate TerminalPane context menu to shared ContextMenu component",
+      "description": "As a developer, I want TerminalPane to use the shared ContextMenu component so that all context menus have consistent styling and behavior.",
       "acceptanceCriteria": [
-        "Prefix key (Cmd+Space on macOS, Ctrl+Space on other platforms) toggles Navigation Mode",
-        "Navigation Mode indicator is visible in the UI when active",
-        "In Navigation Mode: H/ArrowLeft focuses previous hot session, L/ArrowRight focuses next hot session",
-        "In Navigation Mode: N opens New Session panel",
-        "In Navigation Mode: X closes current focused session (calls session_close)",
-        "In Navigation Mode: Shift+X kills current focused session (calls session_kill)",
-        "Pressing prefix key again or Escape exits Navigation Mode",
-        "In Insert Mode (default), all keystrokes go to the focused terminal",
+        "TerminalPane.svelte replaces its inline context menu markup with the shared ContextMenu.svelte component",
+        "Menu items remain: Copy (disabled when no selection), Paste, separator, Clear Screen",
+        "All existing behavior preserved: copy writes to clipboard, paste reads clipboard and sends to session_write, clear sends \\x0c",
+        "Context menu styling is identical to before (since ContextMenu.svelte uses the same styles)",
         "Typecheck passes",
         "Verify in browser using dev-browser skill"
       ],
       "priority": 13,
-      "passes": true,
-      "notes": "Navigation Mode in App.svelte. Cmd+Space (Mac) / Ctrl+Space toggle. h/l/n/x/X keybindings. NAV indicator bar."
-    },
-    {
-      "id": "US-014",
-      "title": "Add mouse click to focus peripheral pane",
-      "description": "As a developer, I want to click on a peripheral pane to focus it so that I can switch sessions with the mouse.",
-      "acceptanceCriteria": [
-        "Clicking on a peripheral DeckPane calls session_focus for that session",
-        "Deck re-renders with the clicked session as focused (largest width)",
-        "Previous focused session becomes peripheral",
-        "Terminal resize is triggered for all affected panes",
-        "Click on already-focused pane is a no-op",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
-      ],
-      "priority": 14,
-      "passes": true,
-      "notes": "Already implemented in US-011. DeckPane onclick \u2192 Deck onFocusSession \u2192 App handleFocusSession \u2192 session_focus command."
-    },
-    {
-      "id": "US-015",
-      "title": "Add Deck pane switch animation",
-      "description": "As a developer, I want smooth animations when switching focused sessions so that the transition feels polished.",
-      "acceptanceCriteria": [
-        "Switching focused session animates pane width changes over 150ms",
-        "Animation uses CSS transitions or Svelte transitions",
-        "Keyboard input during animation is buffered and delivered to the new focused session after transition",
-        "No xterm instances are destroyed or recreated during switch",
-        "Animation does not cause visible jank at 60fps",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
-      ],
-      "priority": 15,
-      "passes": true,
-      "notes": "CSS transition on DeckPane: width 150ms ease-out, opacity 150ms ease-out."
-    },
-    {
-      "id": "US-016",
-      "title": "Add drag-and-drop reorder for Deck panes",
-      "description": "As a developer, I want to drag and drop Deck panes to reorder them so that I can arrange my sessions as I prefer.",
-      "acceptanceCriteria": [
-        "Each DeckPane has a drag handle area (e.g. the top border/header)",
-        "Dragging a pane shows a visual indicator of the drop position",
-        "Dropping reorders hot_session_ids in the workspace",
-        "Backend workspace is updated and workspace.snapshot event is emitted",
-        "Deck re-renders with the new order",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
-      ],
-      "priority": 16,
-      "passes": true,
-      "notes": "DeckPane has drag handle (top colored bar), drag-over outline indicator, ondragstart/ondragover/ondrop wired in Deck.svelte. session_reorder Tauri command updates hot_session_ids order in workspace."
-    },
-    {
-      "id": "US-017",
-      "title": "Implement Park session (Hot \u2192 Warm)",
-      "description": "As a developer, I want to park a session so that it moves from the Deck to the Shelf while its process keeps running in the background.",
-      "acceptanceCriteria": [
-        "session_park Tauri command moves session from hot_session_ids to warm_session_ids",
-        "Session thermal_state changes from Hot to Warm",
-        "PTY is NOT killed - process continues running",
-        "Output continues to be captured into the session's OutputRingBuffer",
-        "workspace.snapshot event is emitted after park",
-        "session.updated event is emitted with new thermal state",
-        "If parked session was focused, focus moves to next hot session (or none if Deck is empty)",
-        "Navigation Mode B key triggers park on focused session",
-        "Typecheck passes"
-      ],
-      "priority": 17,
-      "passes": true,
-      "notes": "session_park Tauri command moves session from hot to warm. MuxEvent::SessionParked emitted. Frontend handles sessionParked event, updates thermalState, shifts focus. Navigation Mode B key triggers park."
-    },
-    {
-      "id": "US-018",
-      "title": "Build Shelf UI with warm session cards",
-      "description": "As a developer, I want a Shelf bar at the bottom of the window showing cards for each warm session so that I can monitor background tasks.",
-      "acceptanceCriteria": [
-        "Shelf.svelte component fixed at the bottom of the window, always visible",
-        "Each warm session renders as a ShelfCard.svelte with: color indicator, session name, attention state badge, cwd, last output line, last activity time",
-        "Attention badges: none for Normal, blue dot for Active, yellow 'Needs Input' for NeedsInput, red 'Failed' for Failed, gray 'Done' for Done",
-        "Cards update in real-time as session.updated and attention.changed events arrive",
-        "lastOutputSummary updates when new output arrives for warm sessions",
-        "Shelf scrolls horizontally if there are many warm sessions",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
-      ],
-      "priority": 18,
-      "passes": true,
-      "notes": "Shelf.svelte fixed at bottom, ShelfCard.svelte with color dot, name, attention badge, cwd, time. App.svelte uses hotSessions for Deck, warmSessions for Shelf. Nav indicator offsets when shelf visible."
-    },
-    {
-      "id": "US-019",
-      "title": "Implement Recall session (Warm \u2192 Hot) with replay",
-      "description": "As a developer, I want to recall a warm session back to the Deck and see its buffered output replayed so that I can resume working with full context.",
-      "acceptanceCriteria": [
-        "session_recall Tauri command moves session from warm_session_ids to hot_session_ids",
-        "Session thermal_state changes from Warm to Hot, becomes focused",
-        "Backend sends replay.start event with fromSeq/toSeq range",
-        "Backend sends replay.chunk events with buffered output data in seq order",
-        "Backend sends replay.end event when replay is complete",
-        "During replay, new live output is queued and not sent until replay.end",
-        "After replay.end, live output resumes with correct seq continuity",
-        "Navigation Mode: J/K selects shelf cards, Enter triggers recall on selected card",
-        "Typecheck passes"
-      ],
-      "priority": 19,
-      "passes": true,
-      "notes": "session_recall Tauri command moves session from warm to hot, emits ReplayStart/ReplayChunk/ReplayEnd events from ring buffer. Frontend handles replayStart (updates thermalState, sets focus), replayChunk (writes to terminal), J/K/Enter shelf navigation in Nav Mode."
-    },
-    {
-      "id": "US-020",
-      "title": "Build frontend replay handler with chunked xterm writes",
-      "description": "As a developer, I want the frontend to handle replay events by writing output to xterm in controlled chunks so that large replays don't freeze the UI.",
-      "acceptanceCriteria": [
-        "terminalReplay.ts handles replay.start, replay.chunk, and replay.end events",
-        "On replay.start, creates a new xterm instance for the recalled session",
-        "replay.chunk data is written to xterm in frames (not all at once) to avoid UI freeze",
-        "If replay takes > 200ms, a 'Restoring...' indicator appears above the terminal",
-        "On replay.end, the indicator is removed and live output begins flowing",
-        "If session exits during replay, replay stops and exit status is shown",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
-      ],
-      "priority": 20,
-      "passes": true,
-      "notes": "terminalReplay.ts handles replayStart/replayChunk/replayEnd with chunked writes (4KB/frame via setTimeout). Restoring indicator after 200ms threshold. App.svelte uses replay module, restoringSessionIds state tracks active replays."
-    },
-    {
-      "id": "US-021",
-      "title": "Implement Attention State detection in Rust",
-      "description": "As a developer, I want the backend to detect attention states from process events and output patterns so that shelf cards show meaningful status badges.",
-      "acceptanceCriteria": [
-        "Process exit with code 0 sets AttentionState to Done",
-        "Process exit with code != 0 sets AttentionState to Failed",
-        "Process killed sets AttentionState to Failed",
-        "Output matching (case-insensitive) 'error', 'failed', 'panic', 'fatal', 'exception' sets Failed",
-        "Output matching 'continue?', 'do you want', 'press enter', 'y/n', '[y/N]', '[Y/n]', '(yes/no)' sets NeedsInput",
-        "New output on a warm session sets Active (if not already Failed/NeedsInput/Done)",
-        "attention.changed event is emitted when state changes",
-        "Detection runs on Rust side, not frontend",
-        "Typecheck passes"
-      ],
-      "priority": 21,
-      "passes": true,
-      "notes": "detect_attention_state() in session_manager.rs checks NeedsInput patterns first, then Failed patterns. route_output detects attention for warm sessions, emits AttentionChanged. monitor_exit emits Done/Failed based on exit code. Frontend handles attentionChanged event."
-    },
-    {
-      "id": "US-022",
-      "title": "Implement session_rename and session_set_color commands",
-      "description": "As a developer, I want to rename sessions and change their colors so that I can organize my workspace.",
-      "acceptanceCriteria": [
-        "session_rename Tauri command updates session name and emits session.updated event",
-        "session_set_color Tauri command updates session color from the 8 preset colors and emits session.updated event",
-        "Navigation Mode R key activates inline rename on the focused session's pane header",
-        "Inline rename: Enter confirms, Escape cancels",
-        "Typecheck passes"
-      ],
-      "priority": 22,
-      "passes": true,
-      "notes": "session_rename and session_set_color Tauri commands added. MuxEvent::SessionUpdated emitted. DeckPane has inline rename input (Enter confirms, Escape cancels). Deck passes renamingSessionId prop. App.svelte R key activates rename on focused session."
-    },
-    {
-      "id": "US-023",
-      "title": "Implement config system with TOML persistence",
-      "description": "As a developer, I want a configuration system that reads/writes TOML config files so that user preferences persist across restarts.",
-      "acceptanceCriteria": [
-        "UserConfig Rust struct with sections: terminal (font_family, font_size, line_height, scrollback_lines, replay_buffer_lines, replay_buffer_mb), theme (background, foreground, cursor, selection, ansi colors), layout (default, focused_pane_width, preview_opacity, animation_ms, max_hot_sessions, shelf_position), shell (default), keys (prefix)",
-        "Config file path follows platform conventions: macOS ~/Library/Application Support/vibemux/config.toml, Linux ~/.config/vibemux/config.toml",
-        "Config loads on startup with defaults for missing fields",
-        "Corrupted config file falls back to all defaults and logs a warning",
-        "config_get Tauri command returns current config",
-        "config_update Tauri command accepts partial config, merges with current, writes atomically (temp file + rename)",
-        "Typecheck passes"
-      ],
-      "priority": 23,
-      "passes": true,
-      "notes": "config.rs with UserConfig (terminal/theme/layout/shell/keys sections), load_config/save_config with atomic write. config_get and config_update Tauri commands with JSON merge. toml crate added. Platform-aware config path (macOS ~/Library/Application Support/vibemux/config.toml)."
-    },
-    {
-      "id": "US-024",
-      "title": "Build Settings panel UI for font and theme",
-      "description": "As a developer, I want a Settings panel where I can change font, theme, and layout settings so that I can customize my terminal experience.",
-      "acceptanceCriteria": [
-        "SettingsPanel.svelte with sections for Terminal (font_family, font_size, line_height), Theme (background, foreground, cursor, selection, 8 ANSI colors), and Layout settings",
-        "Changes call config_update and apply immediately without restart",
-        "Terminal font/theme changes are reflected in all open xterm instances in real-time",
-        "Panel is accessible from a settings button/icon in the UI",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
-      ],
-      "priority": 24,
-      "passes": true,
-      "notes": "SettingsPanel.svelte with Terminal/Theme/Layout tabs. Changes call config_update immediately. Settings button (\u2699) in bottom-right corner. Shelf offset applied when shelf visible."
-    },
-    {
-      "id": "US-025",
-      "title": "Add terminal copy, paste, and right-click menu",
-      "description": "As a developer, I want copy/paste and a right-click context menu in the terminal so that I can interact with terminal content efficiently.",
-      "acceptanceCriteria": [
-        "Mouse selection + Cmd/Ctrl+C copies selected text to clipboard",
-        "Cmd/Ctrl+V pastes clipboard content into the terminal via session_write",
-        "Right-click on terminal shows context menu with: Copy, Paste, Clear Screen",
-        "Copy is disabled when no text is selected",
-        "Clear Screen sends appropriate escape sequence to the terminal",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
-      ],
-      "priority": 25,
-      "passes": true,
-      "notes": "TerminalPane.svelte: Cmd/Ctrl+C copies selection, Cmd/Ctrl+V pastes, right-click shows context menu (Copy/Paste/Clear Screen). Copy disabled when no selection. Clear Screen sends \\x0c."
-    },
-    {
-      "id": "US-026",
-      "title": "Add terminal link detection and OSC title updates",
-      "description": "As a developer, I want clickable links in the terminal and dynamic terminal titles so that the terminal feels full-featured.",
-      "acceptanceCriteria": [
-        "URLs in terminal output are detected and rendered as clickable links",
-        "Clicking a link opens it in the system default browser via Tauri's safe shell opener",
-        "OSC 0 and OSC 2 escape sequences update the session's terminal_title field",
-        "Terminal title changes emit session.updated event",
-        "Terminal title is displayed in the DeckPane header if set",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
-      ],
-      "priority": 26,
-      "passes": true,
-      "notes": ""
-    },
-    {
-      "id": "US-027",
-      "title": "Build Session Search UI",
-      "description": "As a developer, I want a search overlay to quickly find and jump to any session by name, cwd, or recent output.",
-      "acceptanceCriteria": [
-        "SessionSearch.svelte overlay opens with Navigation Mode + / key",
-        "Text input filters sessions in real-time by name, cwd, and lastOutputSummary",
-        "Results show session color, name, thermal state, and cwd",
-        "Arrow keys navigate results, Enter selects",
-        "Selecting a hot session focuses it",
-        "Selecting a warm session triggers recall",
-        "Escape closes the search overlay",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
-      ],
-      "priority": 27,
-      "passes": true,
-      "notes": ""
-    },
-    {
-      "id": "US-028",
-      "title": "Add keyboard shortcut help overlay",
-      "description": "As a developer, I want a help overlay showing all keyboard shortcuts so that I can learn the keybindings.",
-      "acceptanceCriteria": [
-        "Navigation Mode + ? key opens a help overlay",
-        "Overlay lists all Navigation Mode keybindings with descriptions",
-        "Shows the prefix key for the current platform",
-        "Escape or ? again closes the overlay",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
-      ],
-      "priority": 28,
-      "passes": true,
-      "notes": ""
-    },
-    {
-      "id": "US-029",
-      "title": "Handle config corruption and error display",
-      "description": "As a developer, I want the app to gracefully handle config file corruption and display warnings so that a bad config doesn't prevent me from using the app.",
-      "acceptanceCriteria": [
-        "If config.toml is corrupted (invalid TOML), app starts with all default values",
-        "A warning banner is displayed at the top of the app indicating config was reset to defaults",
-        "Warning banner is dismissible",
-        "If config has unknown fields, they are ignored (not treated as error)",
-        "App logs the specific parse error for debugging",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
-      ],
-      "priority": 29,
-      "passes": true,
-      "notes": ""
-    },
-    {
-      "id": "US-030",
-      "title": "Add WebGL fallback to canvas renderer",
-      "description": "As a developer, I want xterm.js to fall back to canvas rendering if WebGL fails so that the terminal works on all systems.",
-      "acceptanceCriteria": [
-        "TerminalPane attempts to load WebGL addon first",
-        "If WebGL addon throws or fails to initialize, falls back to canvas renderer",
-        "Fallback is silent to the user (no error shown, just works)",
-        "Terminal is fully functional with canvas renderer (input, output, resize, scrollback)",
-        "Typecheck passes"
-      ],
-      "priority": 30,
-      "passes": true,
+      "passes": false,
       "notes": ""
     }
   ]

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run:*)",
+      "Bash(kill %1)",
+      "Bash(wait)",
+      "Bash(xargs kill:*)",
+      "Bash(cargo run:*)",
+      "Bash(git commit:*)",
+      "Bash(python3 -c \"import json; d=json.load\\(open\\('scripts/ralph/prd.json'\\)\\); print\\(f'Stories: {len\\(d[\\\\\"userStories\\\\\"]\\)}, Branch: {d[\\\\\"branchName\\\\\"]}'\\)\")"
+    ]
+  }
+}
