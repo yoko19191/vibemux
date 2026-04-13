@@ -4,6 +4,7 @@ use tauri::State;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
+use crate::config::{save_config, ConfigState, UserConfig};
 use crate::models::*;
 use crate::session_manager::SessionManager;
 
@@ -233,4 +234,43 @@ pub async fn session_reorder(
         .collect::<Result<Vec<_>, _>>()?;
     let mut manager = state.lock().await;
     manager.reorder_hot_sessions(uuids)
+}
+
+#[tauri::command]
+pub fn config_get(config_state: State<'_, ConfigState>) -> Result<UserConfig, String> {
+    let cfg = config_state.lock().map_err(|e| e.to_string())?;
+    Ok(cfg.clone())
+}
+
+#[tauri::command]
+pub fn config_update(
+    config_state: State<'_, ConfigState>,
+    update: serde_json::Value,
+) -> Result<UserConfig, String> {
+    let mut cfg = config_state.lock().map_err(|e| e.to_string())?;
+    // Merge: serialize current, merge JSON, deserialize back
+    let mut current_json = serde_json::to_value(&*cfg)
+        .map_err(|e| format!("serialize error: {}", e))?;
+    merge_json(&mut current_json, &update);
+    let new_cfg: UserConfig = serde_json::from_value(current_json)
+        .map_err(|e| format!("deserialize error: {}", e))?;
+    *cfg = new_cfg.clone();
+    drop(cfg);
+    save_config(&new_cfg)?;
+    Ok(new_cfg)
+}
+
+fn merge_json(base: &mut serde_json::Value, update: &serde_json::Value) {
+    if let (serde_json::Value::Object(base_map), serde_json::Value::Object(update_map)) =
+        (base, update)
+    {
+        for (k, v) in update_map {
+            let entry = base_map.entry(k).or_insert(serde_json::Value::Null);
+            if v.is_object() && entry.is_object() {
+                merge_json(entry, v);
+            } else {
+                *entry = v.clone();
+            }
+        }
+    }
 }

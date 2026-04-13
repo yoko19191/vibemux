@@ -284,3 +284,18 @@
   - $effect captures prop values — use renameValue = sessionName inside $effect, not as $state(sessionName) initializer
   - Inline rename input needs e.stopPropagation() on click to prevent DeckPane focus handler from firing
 ---
+
+## 2026-04-13 - US-023
+- Created config.rs with UserConfig struct (terminal/theme/layout/shell/keys sections with defaults)
+- load_config() reads TOML from platform path, falls back to defaults on error/missing
+- save_config() writes atomically via temp file + rename
+- config_get and config_update Tauri commands in commands.rs (config_update uses JSON merge)
+- Added toml = "0.8" to Cargo.toml
+- lib.rs: loads config on startup, manages ConfigState = Arc<Mutex<UserConfig>>
+- Files changed: src-tauri/Cargo.toml, src-tauri/src/config.rs (new), src-tauri/src/commands.rs, src-tauri/src/lib.rs
+- **Learnings for future iterations:**
+  - toml crate: use #[serde(default)] on all config structs for missing-field tolerance
+  - Atomic write: write to .toml.tmp then std::fs::rename to avoid partial writes
+  - config_update uses JSON merge (not TOML merge) — serialize to JSON, merge, deserialize back
+  - ConfigState uses std::sync::Mutex (not tokio) since config_get/config_update are sync commands
+---

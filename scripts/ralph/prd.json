@@ -417,8 +417,8 @@
         "Typecheck passes"
       ],
       "priority": 23,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "config.rs with UserConfig (terminal/theme/layout/shell/keys sections), load_config/save_config with atomic write. config_get and config_update Tauri commands with JSON merge. toml crate added. Platform-aware config path (macOS ~/Library/Application Support/vibemux/config.toml)."
     },
     {
       "id": "US-024",

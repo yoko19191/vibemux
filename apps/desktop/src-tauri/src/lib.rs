@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod config;
 pub mod events;
 pub mod models;
 pub mod pty_host;
@@ -9,6 +10,7 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 
 use commands::AppState;
+use config::{load_config, ConfigState};
 use session_manager::SessionManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -16,9 +18,12 @@ pub fn run() {
     let (event_tx, event_rx) = mpsc::unbounded_channel();
     let manager = SessionManager::new(event_tx);
     let state: AppState = Arc::new(Mutex::new(manager));
+    let cfg = load_config();
+    let config_state: ConfigState = Arc::new(std::sync::Mutex::new(cfg));
 
     tauri::Builder::default()
         .manage(state)
+        .manage(config_state)
         .invoke_handler(tauri::generate_handler![
             commands::session_create,
             commands::session_write,
@@ -32,6 +37,8 @@ pub fn run() {
             commands::session_set_color,
             commands::session_reorder,
             commands::workspace_get_snapshot,
+            commands::config_get,
+            commands::config_update,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
