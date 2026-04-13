@@ -67,11 +67,13 @@ pub async fn session_create(
     state: State<'_, AppState>,
     payload: CreateSessionPayload,
 ) -> Result<SessionSnapshot, String> {
+    eprintln!("[vibemux] session_create called: name={}, cwd={}, type={}", payload.name, payload.cwd, payload.command_type);
     let command = match payload.command_type.as_str() {
         "shell" => {
             let shell = payload
                 .shell
                 .unwrap_or_else(|| std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into()));
+            eprintln!("[vibemux] shell={}", shell);
             SessionCommand::Shell { shell }
         }
         "command" => {
@@ -84,14 +86,19 @@ pub async fn session_create(
         other => return Err(format!("unknown command type: '{}'. Use 'shell' or 'command'", other)),
     };
 
+    eprintln!("[vibemux] acquiring lock...");
     let mut manager = state.lock().await;
+    eprintln!("[vibemux] lock acquired, creating session...");
     let session_id = manager.create_session(payload.name, payload.cwd, command, 80, 24)?;
+    eprintln!("[vibemux] session created: {}", session_id);
 
     let session = manager
         .get_session(session_id)
         .ok_or_else(|| format!("session {} was created but not found", session_id))?;
 
-    Ok(session_to_snapshot(session))
+    let snap = session_to_snapshot(session);
+    eprintln!("[vibemux] returning snapshot: {:?}", snap);
+    Ok(snap)
 }
 
 #[tauri::command]

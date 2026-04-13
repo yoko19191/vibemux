@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
+  import "@xterm/xterm/css/xterm.css";
   import { Terminal } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
   import { WebglAddon } from "@xterm/addon-webgl";
@@ -91,7 +92,16 @@
       onRendererType?.('canvas');
     }
 
+    // Defer initial fit past the deck-pane CSS transition (150ms) so xterm
+    // measures the final container size, not the animated intermediate size.
     fitAddon.fit();
+    setTimeout(() => {
+      fitAddon?.fit();
+      const dims = fitAddon?.proposeDimensions();
+      if (dims) {
+        invoke("session_resize", { sessionId, cols: dims.cols, rows: dims.rows }).catch(console.error);
+      }
+    }, 200);
 
     // Send keystrokes to backend
     terminal.onData((data: string) => {

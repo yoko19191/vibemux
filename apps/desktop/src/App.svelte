@@ -97,10 +97,13 @@
 
     try {
       homeCwd = await getHomeDir();
+      console.log("[vibemux] homeCwd:", homeCwd);
       // Check for config load error
       const cfgErr = await invoke<string | null>("config_get_error");
+      console.log("[vibemux] config_get_error done:", cfgErr);
       if (cfgErr) configError = cfgErr;
 
+      console.log("[vibemux] calling session_create...");
       const snapshot: SessionSnapshot = await invoke("session_create", {
         payload: {
           name: "shell",
@@ -108,9 +111,11 @@
           commandType: "shell",
         },
       });
+      console.log("[vibemux] session_create returned:", JSON.stringify(snapshot));
       sessions = [snapshot];
       focusedSessionId = snapshot.id;
     } catch (e) {
+      console.error("[vibemux] session_create failed:", e);
       error = `Failed to create session: ${e}`;
     }
   });

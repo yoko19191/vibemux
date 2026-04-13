@@ -90,6 +90,9 @@
   }
 
   onMount(() => {
+    // Seed containerWidth immediately so the first layout isn't zero-width
+    containerWidth = containerEl.getBoundingClientRect().width;
+
     resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         containerWidth = entry.contentRect.width;

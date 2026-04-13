@@ -1,6 +1,6 @@
 use serde::Serialize;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter};
+use tauri::{async_runtime, AppHandle, Emitter};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -60,7 +60,7 @@ pub enum FrontendEvent {
 const BATCH_INTERVAL_MS: u64 = 12;
 
 pub fn start_event_bridge(app_handle: AppHandle, mut event_rx: mpsc::UnboundedReceiver<MuxEvent>) {
-    tokio::spawn(async move {
+    async_runtime::spawn(async move {
         let mut batch: Vec<FrontendEvent> = Vec::new();
         let mut interval = tokio::time::interval(Duration::from_millis(BATCH_INTERVAL_MS));
 
