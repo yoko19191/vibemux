@@ -10,7 +10,7 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 
 use commands::AppState;
-use config::{load_config, ConfigState};
+use config::{load_config_with_error, ConfigErrorState, ConfigState};
 use session_manager::SessionManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -18,12 +18,14 @@ pub fn run() {
     let (event_tx, event_rx) = mpsc::unbounded_channel();
     let manager = SessionManager::new(event_tx);
     let state: AppState = Arc::new(Mutex::new(manager));
-    let cfg = load_config();
+    let (cfg, cfg_error) = load_config_with_error();
     let config_state: ConfigState = Arc::new(std::sync::Mutex::new(cfg));
+    let config_error_state: ConfigErrorState = Arc::new(std::sync::Mutex::new(cfg_error));
 
     tauri::Builder::default()
         .manage(state)
         .manage(config_state)
+        .manage(config_error_state)
         .invoke_handler(tauri::generate_handler![
             commands::session_create,
             commands::session_write,
@@ -39,6 +41,7 @@ pub fn run() {
             commands::workspace_get_snapshot,
             commands::config_get,
             commands::config_update,
+            commands::config_get_error,
             commands::open_url,
             commands::session_set_title,
         ])

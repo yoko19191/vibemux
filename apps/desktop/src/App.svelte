@@ -14,6 +14,7 @@
   let sessions: SessionSnapshot[] = $state([]);
   let focusedSessionId: string | null = $state(null);
   let error: string | null = $state(null);
+  let configError: string | null = $state(null);
   let navMode = $state(false);
   let showNewSession = $state(false);
   let showSettings = $state(false);
@@ -96,6 +97,10 @@
 
     try {
       homeCwd = await getHomeDir();
+      // Check for config load error
+      const cfgErr = await invoke<string | null>("config_get_error");
+      if (cfgErr) configError = cfgErr;
+
       const snapshot: SessionSnapshot = await invoke("session_create", {
         payload: {
           name: "shell",
@@ -326,6 +331,14 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <main class:has-shelf={warmSessions.length > 0}>
+  {#if configError}
+    <div class="config-error-banner">
+      <span class="config-error-icon">⚠</span>
+      <span class="config-error-msg">Config reset to defaults: {configError}</span>
+      <button class="config-error-dismiss" onclick={() => (configError = null)}>✕</button>
+    </div>
+  {/if}
+
   {#if error}
     <div class="error">{error}</div>
   {:else if hotSessions.length > 0}
@@ -452,5 +465,51 @@
   .nav-hint {
     color: #999;
     font-size: 0.75rem;
+  }
+
+  .config-error-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    background: rgba(234, 179, 8, 0.15);
+    border-bottom: 1px solid #eab308;
+    font-family: system-ui, -apple-system, sans-serif;
+    z-index: 300;
+  }
+
+  .config-error-icon {
+    color: #eab308;
+    font-size: 0.85rem;
+    flex-shrink: 0;
+  }
+
+  .config-error-msg {
+    color: #d9d4c7;
+    font-size: 0.75rem;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .config-error-dismiss {
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+
+  .config-error-dismiss:hover {
+    color: #d9d4c7;
+    background: #2a2a2a;
   }
 </style>

@@ -4,7 +4,7 @@ use tauri::State;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::config::{save_config, ConfigState, UserConfig};
+use crate::config::{save_config, ConfigErrorState, ConfigState, UserConfig};
 use crate::models::*;
 use crate::session_manager::SessionManager;
 
@@ -296,6 +296,11 @@ pub async fn session_set_title(
         .map_err(|_| format!("invalid session id: '{}'", session_id))?;
     let mut manager = state.lock().await;
     manager.set_session_title(uuid, title)
+}
+
+#[tauri::command]
+pub fn config_get_error(error_state: State<'_, ConfigErrorState>) -> Option<String> {
+    error_state.lock().ok().and_then(|e| e.clone())
 }
 
 fn merge_json(base: &mut serde_json::Value, update: &serde_json::Value) {

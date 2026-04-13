@@ -142,6 +142,9 @@ pub struct UserConfig {
 
 pub type ConfigState = Arc<Mutex<UserConfig>>;
 
+/// Holds the last config load error, if any (set once at startup).
+pub type ConfigErrorState = Arc<Mutex<Option<String>>>;
+
 fn config_path() -> PathBuf {
     #[cfg(target_os = "macos")]
     {
@@ -162,24 +165,31 @@ fn config_path() -> PathBuf {
     }
 }
 
-pub fn load_config() -> UserConfig {
+/// Returns (config, optional_error_message)
+pub fn load_config_with_error() -> (UserConfig, Option<String>) {
     let path = config_path();
     if !path.exists() {
-        return UserConfig::default();
+        return (UserConfig::default(), None);
     }
     match std::fs::read_to_string(&path) {
         Ok(content) => match toml::from_str::<UserConfig>(&content) {
-            Ok(cfg) => cfg,
+            Ok(cfg) => (cfg, None),
             Err(e) => {
-                eprintln!("Warning: corrupted config at {:?}: {}. Using defaults.", path, e);
-                UserConfig::default()
+                let msg = format!("Config file at {:?} is corrupted: {}. Using defaults.", path, e);
+                eprintln!("Warning: {}", msg);
+                (UserConfig::default(), Some(msg))
             }
         },
         Err(e) => {
-            eprintln!("Warning: could not read config at {:?}: {}. Using defaults.", path, e);
-            UserConfig::default()
+            let msg = format!("Could not read config at {:?}: {}. Using defaults.", path, e);
+            eprintln!("Warning: {}", msg);
+            (UserConfig::default(), Some(msg))
         }
     }
+}
+
+pub fn load_config() -> UserConfig {
+    load_config_with_error().0
 }
 
 pub fn save_config(config: &UserConfig) -> Result<(), String> {
