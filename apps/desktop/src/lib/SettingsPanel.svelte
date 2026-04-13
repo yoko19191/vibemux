@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { presetThemes, type ThemePreset } from "./presetThemes.js";
 
   interface TerminalConfig {
     font_family: string;
@@ -196,6 +197,27 @@
         </div>
       {:else if activeTab === "theme"}
         <div class="section">
+          <div class="preset-themes-grid">
+            {#each presetThemes as preset}
+              {@const isSelected = config.theme.background === preset.background && config.theme.foreground === preset.foreground}
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div
+                class="preset-card"
+                class:selected={isSelected}
+                onclick={() => applyUpdate({ theme: preset })}
+                title={preset.name}
+              >
+                <div class="preset-swatches">
+                  <div class="swatch" style="background: {preset.background}"></div>
+                  <div class="swatch" style="background: {preset.foreground}"></div>
+                  <div class="swatch" style="background: {preset.cursor}"></div>
+                </div>
+                <span class="preset-name">{preset.name}</span>
+              </div>
+            {/each}
+          </div>
+          <div class="section-divider"></div>
           {#each [
             ["background", "Background"],
             ["foreground", "Foreground"],
@@ -439,5 +461,58 @@
     color: #666;
     font-size: 0.8rem;
     text-align: center;
+  }
+
+  .preset-themes-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .preset-card {
+    background: #111;
+    border: 1px solid #333;
+    border-radius: 5px;
+    padding: 0.4rem;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    transition: border-color 100ms;
+  }
+
+  .preset-card:hover { border-color: #555; }
+
+  .preset-card.selected {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 1px #3b82f640;
+  }
+
+  .preset-swatches {
+    display: flex;
+    gap: 2px;
+    height: 18px;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .swatch {
+    flex: 1;
+  }
+
+  .preset-name {
+    font-size: 0.6rem;
+    color: #999;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .section-divider {
+    height: 1px;
+    background: #2a2a2a;
+    margin: 0.25rem 0;
   }
 </style>
