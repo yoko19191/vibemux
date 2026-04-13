@@ -327,3 +327,70 @@
   - Clear Screen: \x0c (form feed) is the standard escape sequence
   - Context menu position: use e.clientX/clientY for fixed positioning
 ---
+
+## 2026-04-13 - US-026
+- Added WebLinksAddon to TerminalPane.svelte for clickable URLs
+- Added open_url Tauri command using std::process::Command (open/xdg-open/cmd)
+- Added session_set_title Tauri command + set_session_title() in SessionManager
+- OSC 0/2 handlers in TerminalPane call session_set_title on title change
+- DeckPane.svelte: added terminalTitle prop, displayName derived (terminalTitle || sessionName)
+- Deck.svelte: added getTerminalTitle() helper, passes terminalTitle to DeckPane
+- App.svelte: handles sessionUpdated event by refreshing workspace snapshot
+- Files changed: src-tauri/src/commands.rs, src-tauri/src/session_manager.rs, src-tauri/src/lib.rs, src/lib/TerminalPane.svelte, src/lib/DeckPane.svelte, src/lib/Deck.svelte, src/App.svelte
+- **Learnings for future iterations:**
+  - @xterm/addon-web-links WebLinksAddon constructor takes a click handler (e, uri) => void
+  - terminal.parser.registerOscHandler(0, handler) intercepts OSC 0 (icon+title) sequences
+  - tauri-plugin-shell is NOT in Cargo.toml — use std::process::Command with open/xdg-open/cmd
+  - sessionUpdated event should trigger a workspace_get_snapshot refresh to pick up new title
+---
+
+## 2026-04-13 - US-027
+- Created SessionSearch.svelte: overlay with text input, filtered results list, keyboard navigation
+- Filters sessions by name, cwd, terminalTitle in real-time
+- Results show color dot, name, thermal badge, short cwd
+- Arrow keys navigate, Enter selects (hot→focus, warm→recall), Escape closes
+- Wired / key in App.svelte handleKeydown (Nav Mode + /)
+- Added handleSearchSelect() in App.svelte
+- Files changed: src/lib/SessionSearch.svelte (new), src/App.svelte
+- **Learnings for future iterations:**
+  - $derived.by() needed when filter depends on $state query — plain $derived([]) works too
+  - $effect(() => { selectedIdx = 0; }) resets selection when filtered list changes
+  - Use svelte-ignore a11y_no_noninteractive_element_interactions on <li> with onclick
+---
+
+## 2026-04-13 - US-028
+- Created HelpOverlay.svelte: centered modal with table of all Nav Mode keybindings
+- prefixKey prop shows platform-specific prefix (Cmd+Space / Ctrl+Space)
+- Escape or ? closes the overlay (svelte:window onkeydown handler)
+- Wired ? key in App.svelte handleKeydown (Nav Mode + ?)
+- Files changed: src/lib/HelpOverlay.svelte (new), src/App.svelte
+- **Learnings for future iterations:**
+  - Use $derived([...]) for arrays that reference props to avoid state_referenced_locally warning
+  - $derived([...]) syntax: let x = $derived([item1, item2]); — closing ]) not ];
+  - svelte:window onkeydown in component handles global keys without polluting App.svelte
+---
+
+## 2026-04-13 - US-029
+- Added load_config_with_error() to config.rs returning (UserConfig, Option<String>)
+- Added ConfigErrorState = Arc<Mutex<Option<String>>> type
+- Added config_get_error Tauri command returning Option<String>
+- lib.rs: uses load_config_with_error(), manages ConfigErrorState, registers config_get_error
+- App.svelte: checks config_get_error on startup, shows dismissible yellow warning banner
+- Files changed: src-tauri/src/config.rs, src-tauri/src/commands.rs, src-tauri/src/lib.rs, src/App.svelte
+- **Learnings for future iterations:**
+  - Split load_config() into load_config_with_error() returning tuple for error propagation
+  - ConfigErrorState is Arc<Mutex<Option<String>>> — same pattern as ConfigState
+  - Banner uses position: fixed; top: 0 with z-index: 300 to overlay everything
+---
+
+## 2026-04-13 - US-030
+- TerminalPane.svelte already had WebGL try/catch fallback from US-026
+- Added onRendererType callback prop to TerminalPane — fires 'webgl' or 'canvas' on init/context-loss
+- DeckPane.svelte: added rendererType $state, wires onRendererType from TerminalPane
+- DeckPane header shows "canvas" badge when rendererType === 'canvas'
+- Files changed: src/lib/TerminalPane.svelte, src/lib/DeckPane.svelte
+- **Learnings for future iterations:**
+  - WebGL fallback was already in place — US-030 mainly adds visibility (canvas badge)
+  - onContextLoss fires when GPU context is lost at runtime — dispose addon and update state
+  - Pass renderer type up via callback prop rather than binding — cleaner for one-way data flow
+---

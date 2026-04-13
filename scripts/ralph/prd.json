@@ -259,7 +259,7 @@
       ],
       "priority": 14,
       "passes": true,
-      "notes": "Already implemented in US-011. DeckPane onclick → Deck onFocusSession → App handleFocusSession → session_focus command."
+      "notes": "Already implemented in US-011. DeckPane onclick \u2192 Deck onFocusSession \u2192 App handleFocusSession \u2192 session_focus command."
     },
     {
       "id": "US-015",
@@ -297,7 +297,7 @@
     },
     {
       "id": "US-017",
-      "title": "Implement Park session (Hot → Warm)",
+      "title": "Implement Park session (Hot \u2192 Warm)",
       "description": "As a developer, I want to park a session so that it moves from the Deck to the Shelf while its process keeps running in the background.",
       "acceptanceCriteria": [
         "session_park Tauri command moves session from hot_session_ids to warm_session_ids",
@@ -334,7 +334,7 @@
     },
     {
       "id": "US-019",
-      "title": "Implement Recall session (Warm → Hot) with replay",
+      "title": "Implement Recall session (Warm \u2192 Hot) with replay",
       "description": "As a developer, I want to recall a warm session back to the Deck and see its buffered output replayed so that I can resume working with full context.",
       "acceptanceCriteria": [
         "session_recall Tauri command moves session from warm_session_ids to hot_session_ids",
@@ -434,7 +434,7 @@
       ],
       "priority": 24,
       "passes": true,
-      "notes": "SettingsPanel.svelte with Terminal/Theme/Layout tabs. Changes call config_update immediately. Settings button (⚙) in bottom-right corner. Shelf offset applied when shelf visible."
+      "notes": "SettingsPanel.svelte with Terminal/Theme/Layout tabs. Changes call config_update immediately. Settings button (\u2699) in bottom-right corner. Shelf offset applied when shelf visible."
     },
     {
       "id": "US-025",
@@ -467,7 +467,7 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 26,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
@@ -486,7 +486,7 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 27,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
@@ -502,7 +502,7 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 28,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
@@ -519,7 +519,7 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 29,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
@@ -534,7 +534,7 @@
         "Typecheck passes"
       ],
       "priority": 30,
-      "passes": false,
+      "passes": true,
       "notes": ""
     }
   ]
