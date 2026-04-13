@@ -44,7 +44,8 @@
     right: 0;
     height: 36px;
     background: #161616;
-    border-bottom: 1px solid #2a2a2a;
+    border-bottom: 1px solid transparent;
+    border-image: linear-gradient(to right, #3b82f640, #3b82f620, transparent) 1;
     display: flex;
     align-items: center;
     justify-content: space-between;

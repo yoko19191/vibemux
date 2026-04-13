@@ -62,6 +62,9 @@
   let borderStyle = $derived(isFocused
     ? `2px solid ${borderColor}`
     : `1px solid ${borderColor}80`);
+  let boxShadow = $derived(isFocused
+    ? `0 0 0 1px ${borderColor}33, 0 4px 16px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05)`
+    : `0 2px 8px rgba(0,0,0,0.4)`);
   let opacity = $derived(isFocused ? 1 : 0.8);
   let dragOver = $state(false);
   let renameValue = $state("");
@@ -149,7 +152,7 @@
   class="deck-pane"
   class:drag-over={dragOver}
   data-session-id={sessionId}
-  style="width: {width}px; border: {borderStyle}; opacity: {opacity};"
+  style="width: {width}px; border: {borderStyle}; box-shadow: {boxShadow}; opacity: {opacity};"
   onclick={onclick}
   onmouseenter={() => (isHovered = true)}
   onmouseleave={() => (isHovered = false)}
@@ -163,7 +166,7 @@
     draggable="true"
     ondragstart={ondragstart}
     oncontextmenu={handleHeaderContextMenu}
-    style="background: {borderColor};"
+    style="background: linear-gradient(to right, {borderColor}22, transparent);"
   ></div>
   <div
     class="pane-header"

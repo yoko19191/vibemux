@@ -157,12 +157,14 @@
     flex-direction: row;
     align-items: center;
     gap: 0.35rem;
-    transition: background 100ms;
+    transition: background 100ms, box-shadow 100ms;
     overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
   }
 
   .shelf-card:hover {
     background: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.6);
   }
 
   .color-dot {
