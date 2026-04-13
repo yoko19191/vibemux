@@ -28,6 +28,8 @@ pub fn run() {
             commands::session_kill,
             commands::session_park,
             commands::session_recall,
+            commands::session_rename,
+            commands::session_set_color,
             commands::session_reorder,
             commands::workspace_get_snapshot,
         ])

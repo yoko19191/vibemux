@@ -400,8 +400,8 @@
         "Typecheck passes"
       ],
       "priority": 22,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "session_rename and session_set_color Tauri commands added. MuxEvent::SessionUpdated emitted. DeckPane has inline rename input (Enter confirms, Escape cancels). Deck passes renamingSessionId prop. App.svelte R key activates rename on focused session."
     },
     {
       "id": "US-023",

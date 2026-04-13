@@ -177,6 +177,30 @@ pub async fn session_kill(
 }
 
 #[tauri::command]
+pub async fn session_rename(
+    state: State<'_, AppState>,
+    session_id: String,
+    name: String,
+) -> Result<(), String> {
+    let uuid = Uuid::parse_str(&session_id)
+        .map_err(|_| format!("invalid session id: '{}'", session_id))?;
+    let mut manager = state.lock().await;
+    manager.rename_session(uuid, name)
+}
+
+#[tauri::command]
+pub async fn session_set_color(
+    state: State<'_, AppState>,
+    session_id: String,
+    color: ColorToken,
+) -> Result<(), String> {
+    let uuid = Uuid::parse_str(&session_id)
+        .map_err(|_| format!("invalid session id: '{}'", session_id))?;
+    let mut manager = state.lock().await;
+    manager.set_session_color(uuid, color)
+}
+
+#[tauri::command]
 pub async fn session_recall(
     state: State<'_, AppState>,
     session_id: String,

@@ -18,6 +18,7 @@
   let restoringSessionIds: Set<string> = $state(new Set());
   let unlisten: (() => void) | null = null;
   let selectedShelfIdx: number | null = $state(null);
+  let renamingSessionId: string | null = $state(null);
 
   const isMac = navigator.platform.toUpperCase().includes("MAC");
 
@@ -198,6 +199,14 @@
           e.preventDefault();
         }
         break;
+      case "r":
+      case "R":
+        if (focusedSessionId) {
+          renamingSessionId = focusedSessionId;
+          navMode = false;
+          e.preventDefault();
+        }
+        break;
     }
   }
 
@@ -256,6 +265,20 @@
     }
   }
 
+  async function handleRenameConfirm(sessionId: string, name: string) {
+    renamingSessionId = null;
+    try {
+      await invoke("session_rename", { sessionId, name });
+      sessions = sessions.map((s) => s.id === sessionId ? { ...s, name } : s);
+    } catch (e) {
+      console.error("Failed to rename session:", e);
+    }
+  }
+
+  function handleRenameCancel() {
+    renamingSessionId = null;
+  }
+
   function handleSessionCreated(snapshot: SessionSnapshot) {
     sessions = [...sessions, snapshot];
     focusedSessionId = snapshot.id;
@@ -272,8 +295,11 @@
     <Deck
       sessions={hotSessions}
       {focusedSessionId}
+      {renamingSessionId}
       onTerminalReady={handleTerminalReady}
       onFocusSession={handleFocusSession}
+      onRenameConfirm={handleRenameConfirm}
+      onRenameCancel={handleRenameCancel}
     />
   {:else if sessions.length > 0}
     <div class="loading">All sessions parked</div>

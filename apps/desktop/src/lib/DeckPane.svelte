@@ -4,17 +4,26 @@
 
   interface Props {
     sessionId: string;
+    sessionName: string;
     color: ColorToken;
     isFocused: boolean;
     width: number;
+    isRenaming?: boolean;
     onReady?: (api: { writeOutput: (data: string) => void }) => void;
     onclick?: () => void;
     ondragstart?: (e: DragEvent) => void;
     ondragover?: (e: DragEvent) => void;
     ondrop?: (e: DragEvent) => void;
+    onRenameConfirm?: (name: string) => void;
+    onRenameCancel?: () => void;
   }
 
-  let { sessionId, color, isFocused, width, onReady, onclick, ondragstart, ondragover, ondrop }: Props = $props();
+  let {
+    sessionId, sessionName, color, isFocused, width,
+    isRenaming = false,
+    onReady, onclick, ondragstart, ondragover, ondrop,
+    onRenameConfirm, onRenameCancel,
+  }: Props = $props();
 
   const colorMap: Record<ColorToken, string> = {
     Red: "#ef4444",
@@ -30,6 +39,28 @@
   let borderColor = $derived(colorMap[color] ?? "#666");
   let opacity = $derived(isFocused ? 1 : 0.8);
   let dragOver = $state(false);
+  let renameValue = $state("");
+  let renameInput: HTMLInputElement | null = $state(null);
+
+  $effect(() => {
+    if (isRenaming) {
+      renameValue = sessionName;
+      // Focus input on next tick
+      setTimeout(() => renameInput?.focus(), 0);
+    }
+  });
+
+  function handleRenameKeydown(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      e.stopPropagation();
+      onRenameConfirm?.(renameValue.trim() || sessionName);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      onRenameCancel?.();
+    }
+  }
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -50,6 +81,20 @@
     ondragstart={ondragstart}
     style="background: {borderColor};"
   ></div>
+  <div class="pane-header" style="border-bottom-color: {borderColor}20;">
+    {#if isRenaming}
+      <!-- svelte-ignore a11y_autofocus -->
+      <input
+        class="rename-input"
+        bind:this={renameInput}
+        bind:value={renameValue}
+        onkeydown={handleRenameKeydown}
+        onclick={(e) => e.stopPropagation()}
+      />
+    {:else}
+      <span class="session-name">{sessionName}</span>
+    {/if}
+  </div>
   <div class="terminal-container">
     <TerminalPane {sessionId} {onReady} />
   </div>
@@ -75,6 +120,37 @@
 
   .drag-handle:active {
     cursor: grabbing;
+  }
+
+  .pane-header {
+    height: 22px;
+    display: flex;
+    align-items: center;
+    padding: 0 0.5rem;
+    border-bottom: 1px solid;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+
+  .session-name {
+    font-size: 0.7rem;
+    color: #888;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+
+  .rename-input {
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid #3b82f6;
+    color: #d9d4c7;
+    font-size: 0.7rem;
+    font-family: system-ui, -apple-system, sans-serif;
+    outline: none;
+    padding: 0;
   }
 
   .drag-over {

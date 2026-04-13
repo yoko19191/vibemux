@@ -269,3 +269,18 @@
   - Shared Arc<Mutex<ThermalState>> allows route_output task to check current thermal state without holding SessionManager lock
   - detect_attention_state returns None for "no special pattern" — caller handles Active promotion
 ---
+
+## 2026-04-13 - US-022
+- Added rename_session() and set_session_color() to SessionManager, emit MuxEvent::SessionUpdated
+- Added MuxEvent::SessionUpdated variant, wired in events.rs convert_event()
+- Added session_rename and session_set_color Tauri commands in commands.rs
+- Registered both commands in lib.rs generate_handler!
+- DeckPane.svelte: added pane-header with session name, isRenaming prop, inline rename input (Enter confirms, Escape cancels), $state(null) for renameInput ref
+- Deck.svelte: added renamingSessionId prop, passes isRenaming/onRenameConfirm/onRenameCancel to DeckPane
+- App.svelte: added renamingSessionId state, R key in Nav Mode activates rename, handleRenameConfirm/handleRenameCancel handlers, passes rename props to Deck
+- Files changed: src-tauri/src/session_manager.rs, src-tauri/src/commands.rs, src-tauri/src/lib.rs, src-tauri/src/events.rs, src/lib/DeckPane.svelte, src/lib/Deck.svelte, src/App.svelte
+- **Learnings for future iterations:**
+  - Svelte 5: bind:this on input must be $state(null) not plain null to avoid non_reactive_update warning
+  - $effect captures prop values — use renameValue = sessionName inside $effect, not as $state(sessionName) initializer
+  - Inline rename input needs e.stopPropagation() on click to prevent DeckPane focus handler from firing
+---

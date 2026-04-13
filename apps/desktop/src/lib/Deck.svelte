@@ -8,11 +8,19 @@
   interface Props {
     sessions: SessionSnapshot[];
     focusedSessionId: string | null;
+    renamingSessionId?: string | null;
     onTerminalReady?: (sessionId: string, api: { writeOutput: (data: string) => void }) => void;
     onFocusSession?: (sessionId: string) => void;
+    onRenameConfirm?: (sessionId: string, name: string) => void;
+    onRenameCancel?: () => void;
   }
 
-  let { sessions, focusedSessionId, onTerminalReady, onFocusSession }: Props = $props();
+  let {
+    sessions, focusedSessionId,
+    renamingSessionId = null,
+    onTerminalReady, onFocusSession,
+    onRenameConfirm, onRenameCancel,
+  }: Props = $props();
 
   let containerEl: HTMLDivElement;
   let containerWidth = $state(0);
@@ -29,6 +37,10 @@
 
   function getColor(sessionId: string): ColorToken {
     return sessions.find((s) => s.id === sessionId)?.color ?? "Blue";
+  }
+
+  function getName(sessionId: string): string {
+    return sessions.find((s) => s.id === sessionId)?.name ?? "";
   }
 
   function handleDragStart(sessionId: string, e: DragEvent) {
@@ -91,14 +103,18 @@
   {#each layouts as layout (layout.sessionId)}
     <DeckPane
       sessionId={layout.sessionId}
+      sessionName={getName(layout.sessionId)}
       color={getColor(layout.sessionId)}
       isFocused={layout.isFocused}
       width={layout.width}
+      isRenaming={renamingSessionId === layout.sessionId}
       onReady={(api) => onTerminalReady?.(layout.sessionId, api)}
       onclick={() => onFocusSession?.(layout.sessionId)}
       ondragstart={(e) => handleDragStart(layout.sessionId, e)}
       ondragover={handleDragOver}
       ondrop={(e) => handleDrop(layout.sessionId, e)}
+      onRenameConfirm={(name) => onRenameConfirm?.(layout.sessionId, name)}
+      onRenameCancel={onRenameCancel}
     />
   {/each}
 </div>

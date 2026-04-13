@@ -54,6 +54,9 @@ pub enum MuxEvent {
         session_id: Uuid,
         attention_state: AttentionState,
     },
+    SessionUpdated {
+        session_id: Uuid,
+    },
 }
 
 struct ManagedSession {
@@ -215,6 +218,28 @@ impl SessionManager {
             return Err(format!("session {} not found", session_id));
         }
         self.workspace.focused_session_id = Some(session_id);
+        Ok(())
+    }
+
+    pub fn rename_session(&mut self, session_id: Uuid, name: String) -> Result<(), String> {
+        let managed = self
+            .sessions
+            .get_mut(&session_id)
+            .ok_or_else(|| format!("session {} not found", session_id))?;
+        managed.session.name = name;
+        managed.session.updated_at = Utc::now();
+        let _ = self.event_tx.send(MuxEvent::SessionUpdated { session_id });
+        Ok(())
+    }
+
+    pub fn set_session_color(&mut self, session_id: Uuid, color: ColorToken) -> Result<(), String> {
+        let managed = self
+            .sessions
+            .get_mut(&session_id)
+            .ok_or_else(|| format!("session {} not found", session_id))?;
+        managed.session.color = color;
+        managed.session.updated_at = Utc::now();
+        let _ = self.event_tx.send(MuxEvent::SessionUpdated { session_id });
         Ok(())
     }
 

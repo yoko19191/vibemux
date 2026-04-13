@@ -142,6 +142,9 @@ fn convert_event(event: MuxEvent) -> FrontendEvent {
             session_id: session_id.to_string(),
             attention_state,
         },
+        MuxEvent::SessionUpdated { session_id } => FrontendEvent::SessionUpdated {
+            session_id: session_id.to_string(),
+        },
     }
 }
 
