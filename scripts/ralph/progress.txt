@@ -17,7 +17,49 @@
 
 ---
 
-## 2026-04-13 - US-031
+## 2026-04-13 - US-032
+- Added Titlebar.svelte (36px fixed top bar, workspace dot + label, +/⌕/⚙ buttons with tooltips)
+- Updated App.svelte: integrated Titlebar, wrapped content in .content-area (top: 36px), removed floating settings-btn
+- Files changed: App.svelte, src/lib/Titlebar.svelte (new)
+- **Learnings for future iterations:**
+  - content-area uses position:absolute with top:36px to sit below titlebar
+  - Titlebar z-index:100 prevents terminal content overlap
+---
+
+## 2026-04-13 - US-033
+- Added `onboarding_completed: bool` field to UserConfig in config.rs with `#[serde(default)]`
+- Added `detect_shells` Tauri command: reads /etc/shells on macOS/Linux, checks known paths on Windows
+- Registered detect_shells in lib.rs invoke_handler
+- Files changed: config.rs, commands.rs, lib.rs
+- **Learnings for future iterations:**
+  - `#[serde(default)]` on UserConfig struct means all fields get serde defaults — existing configs load fine
+  - detect_shells filters to paths that exist on disk
+---
+
+## 2026-04-13 - US-034..037
+- Created Onboarding.svelte (orchestrator), OnboardingStep1-4.svelte, presetThemes.ts
+- App.svelte: checks onboarding_completed on mount; if false, shows Onboarding overlay and defers session creation
+- handleOnboardingComplete() sets prefixKeyConfig and calls createInitialSession()
+- Files changed: App.svelte, src/lib/Onboarding.svelte (new), OnboardingStep1-4.svelte (new), presetThemes.ts (new)
+- **Learnings for future iterations:**
+  - Onboarding defers session creation — createInitialSession() extracted as separate function
+  - presetThemes.ts has 3 themes: Dark, Solarized Dark, Monokai with full ANSI 16 colors
+---
+
+## 2026-04-13 - US-038..043
+- Created ContextMenu.svelte: shared context menu with separator, submenu (color picker), disabled items
+- Updated DeckPane.svelte: header action buttons (park/rename/close) on focused+hovered, right-click context menu on header
+- Updated Deck.svelte: added onPark/onClose props, passed to DeckPane
+- Updated ShelfCard.svelte: right-click context menu with recall/rename/color/close/kill, inline rename
+- Updated Shelf.svelte: added onRename/onSetColor/onClose/onKill props, passed to ShelfCard
+- Updated TerminalPane.svelte: migrated inline context menu to shared ContextMenu component
+- Updated App.svelte: added closeSessionById, handleShelfRename, handleShelfSetColor, handleShelfKill helpers
+- Files changed: ContextMenu.svelte (new), DeckPane.svelte, Deck.svelte, ShelfCard.svelte, Shelf.svelte, TerminalPane.svelte, App.svelte
+- **Learnings for future iterations:**
+  - ContextMenu submenu children now have per-item onSelect callbacks (not shared onClick)
+  - DeckPane startRename uses CustomEvent dispatch to signal parent — workaround for missing onStartRename prop
+  - ShelfCard inline rename uses onblur to cancel (avoids needing a separate cancel button)
+---
 - Changed default prefix key from "cmd+space" to "ctrl+b" in config.rs KeysConfig::default()
 - Created `apps/desktop/src/lib/keymap.ts` with parsePrefixKey, matchesPrefixKey, formatPrefixKey
 - Updated App.svelte: loads keys.prefix from config_get on mount, uses matchesPrefixKey for detection, shows prefixKeyDisplay in nav indicator and HelpOverlay
