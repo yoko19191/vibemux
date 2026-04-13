@@ -1,4 +1,5 @@
 pub mod models;
+pub mod pty_host;
 pub mod ring_buffer;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
