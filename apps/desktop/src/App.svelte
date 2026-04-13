@@ -5,6 +5,7 @@
   import Deck from "./lib/Deck.svelte";
   import Shelf from "./lib/Shelf.svelte";
   import NewSessionPanel from "./lib/NewSessionPanel.svelte";
+  import { onReplayStart, onReplayChunk, onReplayEnd, cancelReplay } from "./lib/terminalReplay";
   import type { MuxEvent, SessionSnapshot } from "./lib/types";
 
   let sessions: SessionSnapshot[] = $state([]);
@@ -14,6 +15,7 @@
   let showNewSession = $state(false);
   let homeCwd = $state("/");
   let terminalApis: Map<string, { writeOutput: (data: string) => void }> = new Map();
+  let restoringSessionIds: Set<string> = $state(new Set());
   let unlisten: (() => void) | null = null;
   let selectedShelfIdx: number | null = $state(null);
 
@@ -28,13 +30,14 @@
       if (muxEvent.type === "sessionOutput") {
         terminalApis.get(muxEvent.sessionId)?.writeOutput(muxEvent.data);
       } else if (muxEvent.type === "sessionExited") {
+        cancelReplay(muxEvent.sessionId);
         sessions = sessions.filter((s) => s.id !== muxEvent.sessionId);
         terminalApis.delete(muxEvent.sessionId);
+        restoringSessionIds = new Set([...restoringSessionIds].filter((id) => id !== muxEvent.sessionId));
         if (focusedSessionId === muxEvent.sessionId) {
           focusedSessionId = sessions[0]?.id ?? null;
         }
       } else if (muxEvent.type === "sessionParked") {
-        // Move session from hot to warm in local state
         sessions = sessions.map((s) =>
           s.id === muxEvent.sessionId ? { ...s, thermalState: "Warm" as const } : s
         );
@@ -43,15 +46,29 @@
           focusedSessionId = hotSessions[0]?.id ?? null;
         }
       } else if (muxEvent.type === "replayStart") {
-        // Session is being recalled — move to hot in local state
         sessions = sessions.map((s) =>
           s.id === muxEvent.sessionId ? { ...s, thermalState: "Hot" as const } : s
         );
         focusedSessionId = muxEvent.sessionId;
+        const api = terminalApis.get(muxEvent.sessionId);
+        if (api) {
+          onReplayStart(
+            muxEvent.sessionId,
+            api.writeOutput,
+            (active) => {
+              restoringSessionIds = new Set(
+                active
+                  ? [...restoringSessionIds, muxEvent.sessionId]
+                  : [...restoringSessionIds].filter((id) => id !== muxEvent.sessionId)
+              );
+            }
+          );
+        }
       } else if (muxEvent.type === "replayChunk") {
-        terminalApis.get(muxEvent.sessionId)?.writeOutput(muxEvent.data);
+        onReplayChunk(muxEvent.sessionId, muxEvent.data);
+      } else if (muxEvent.type === "replayEnd") {
+        onReplayEnd(muxEvent.sessionId);
       }
-      // replayEnd: no special handling needed — live output resumes naturally
     });
 
     try {

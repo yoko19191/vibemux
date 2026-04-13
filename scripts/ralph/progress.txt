@@ -240,3 +240,15 @@
   - selectedShelfIdx must be reset to null when navMode exits or recall is triggered
   - Switch statement closing brace must match handleKeydown function brace — easy to miss when adding cases
 ---
+
+## 2026-04-13 - US-020
+- Created terminalReplay.ts: onReplayStart/onReplayChunk/onReplayEnd/cancelReplay/isReplaying exports
+- Chunked writes: 4KB per frame via setTimeout(0) to avoid UI freeze
+- Restoring indicator: setTimeout(200ms) triggers onRestoring(true) callback if replay still active
+- App.svelte: imports replay module, restoringSessionIds $state Set, updated event handler to use replay module, cancelReplay on sessionExited
+- Files changed: src/lib/terminalReplay.ts (new), src/App.svelte
+- **Learnings for future iterations:**
+  - setTimeout(0) yields to browser event loop between chunks — prevents UI freeze on large replays
+  - restoringSessionIds is a Set<string> in $state — must reassign (new Set(...)) to trigger reactivity
+  - cancelReplay on sessionExited prevents stale replay state
+---
