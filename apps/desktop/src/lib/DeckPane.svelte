@@ -59,6 +59,9 @@
   ];
 
   let borderColor = $derived(colorMap[color] ?? "#666");
+  let borderStyle = $derived(isFocused
+    ? `2px solid ${borderColor}`
+    : `1px solid ${borderColor}80`);
   let opacity = $derived(isFocused ? 1 : 0.8);
   let dragOver = $state(false);
   let renameValue = $state("");
@@ -146,7 +149,7 @@
   class="deck-pane"
   class:drag-over={dragOver}
   data-session-id={sessionId}
-  style="width: {width}px; border-color: {borderColor}; opacity: {opacity};"
+  style="width: {width}px; border: {borderStyle}; opacity: {opacity};"
   onclick={onclick}
   onmouseenter={() => (isHovered = true)}
   onmouseleave={() => (isHovered = false)}
@@ -215,6 +218,7 @@
     transition: width 150ms ease-out, opacity 150ms ease-out;
     display: flex;
     flex-direction: column;
+    border-radius: 4px;
   }
 
   .drag-handle {
