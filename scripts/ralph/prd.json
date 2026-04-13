@@ -450,8 +450,8 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 25,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "TerminalPane.svelte: Cmd/Ctrl+C copies selection, Cmd/Ctrl+V pastes, right-click shows context menu (Copy/Paste/Clear Screen). Copy disabled when no selection. Clear Screen sends \\x0c."
     },
     {
       "id": "US-026",

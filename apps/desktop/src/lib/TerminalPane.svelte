@@ -17,6 +17,35 @@
   let fitAddon: FitAddon | null = null;
   let resizeObserver: ResizeObserver | null = null;
 
+  // Context menu state
+  let contextMenu: { x: number; y: number } | null = $state(null);
+  let hasSelection = $state(false);
+
+  function closeContextMenu() {
+    contextMenu = null;
+  }
+
+  function handleCopy() {
+    const sel = terminal?.getSelection();
+    if (sel) navigator.clipboard.writeText(sel).catch(console.error);
+    closeContextMenu();
+  }
+
+  async function handlePaste() {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) invoke("session_write", { sessionId, data: text }).catch(console.error);
+    } catch (e) {
+      console.error("Paste failed:", e);
+    }
+    closeContextMenu();
+  }
+
+  function handleClearScreen() {
+    invoke("session_write", { sessionId, data: "\x0c" }).catch(console.error);
+    closeContextMenu();
+  }
+
   onMount(() => {
     terminal = new Terminal({
       scrollback: 10_000,
@@ -53,6 +82,11 @@
       invoke("session_write", { sessionId, data }).catch(console.error);
     });
 
+    // Track selection state
+    terminal.onSelectionChange(() => {
+      hasSelection = (terminal?.getSelection().length ?? 0) > 0;
+    });
+
     // Resize observer
     resizeObserver = new ResizeObserver(() => {
       if (fitAddon) {
@@ -78,17 +112,98 @@
   onDestroy(() => {
     resizeObserver?.disconnect();
     terminal?.dispose();
-    terminal = null;
-    fitAddon = null;
   });
+
+  function handleKeydown(e: KeyboardEvent) {
+    const mod = navigator.platform.toUpperCase().includes("MAC") ? e.metaKey : e.ctrlKey;
+    if (mod && e.key === "c" && hasSelection) {
+      e.preventDefault();
+      handleCopy();
+    } else if (mod && e.key === "v") {
+      e.preventDefault();
+      handlePaste();
+    }
+  }
+
+  function handleContextMenu(e: MouseEvent) {
+    e.preventDefault();
+    contextMenu = { x: e.clientX, y: e.clientY };
+  }
 </script>
 
-<div class="terminal-pane" bind:this={containerEl}></div>
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+  class="terminal-wrapper"
+  bind:this={containerEl}
+  onkeydown={handleKeydown}
+  oncontextmenu={handleContextMenu}
+></div>
+
+{#if contextMenu}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="ctx-overlay" onclick={closeContextMenu}>
+    <div
+      class="ctx-menu"
+      style="left: {contextMenu.x}px; top: {contextMenu.y}px;"
+      onclick={(e) => e.stopPropagation()}
+    >
+      <button class="ctx-item" disabled={!hasSelection} onclick={handleCopy}>Copy</button>
+      <button class="ctx-item" onclick={handlePaste}>Paste</button>
+      <div class="ctx-divider"></div>
+      <button class="ctx-item" onclick={handleClearScreen}>Clear Screen</button>
+    </div>
+  </div>
+{/if}
 
 <style>
-  .terminal-pane {
+  .terminal-wrapper {
     width: 100%;
     height: 100%;
-    overflow: hidden;
+  }
+
+  .ctx-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+  }
+
+  .ctx-menu {
+    position: fixed;
+    background: #1e1e1e;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 0.25rem 0;
+    min-width: 140px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+
+  .ctx-item {
+    display: block;
+    width: 100%;
+    background: none;
+    border: none;
+    color: #d9d4c7;
+    font-size: 0.8rem;
+    padding: 0.35rem 0.75rem;
+    text-align: left;
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  .ctx-item:hover:not(:disabled) {
+    background: #3b82f620;
+  }
+
+  .ctx-item:disabled {
+    color: #555;
+    cursor: default;
+  }
+
+  .ctx-divider {
+    height: 1px;
+    background: #2a2a2a;
+    margin: 0.2rem 0;
   }
 </style>

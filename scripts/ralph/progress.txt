@@ -314,3 +314,16 @@
   - onchange (not oninput) for text/number inputs to avoid firing on every keystroke
   - oninput for color picker to get real-time preview
 ---
+
+## 2026-04-13 - US-025
+- TerminalPane.svelte: added copy/paste keyboard shortcuts (Cmd/Ctrl+C/V), right-click context menu
+- onSelectionChange tracks hasSelection state — Copy disabled when no selection
+- Context menu: Copy, Paste, Clear Screen (sends \x0c)
+- Context menu uses overlay div to close on outside click
+- Files changed: src/lib/TerminalPane.svelte
+- **Learnings for future iterations:**
+  - terminal.getSelection() returns empty string when nothing selected
+  - onSelectionChange fires on every selection change — use it to track hasSelection
+  - Clear Screen: \x0c (form feed) is the standard escape sequence
+  - Context menu position: use e.clientX/clientY for fixed positioning
+---
