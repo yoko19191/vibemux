@@ -39,6 +39,8 @@ pub fn run() {
             commands::workspace_get_snapshot,
             commands::config_get,
             commands::config_update,
+            commands::open_url,
+            commands::session_set_title,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

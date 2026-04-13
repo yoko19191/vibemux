@@ -260,6 +260,44 @@ pub fn config_update(
     Ok(new_cfg)
 }
 
+#[tauri::command]
+pub fn open_url(url: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| format!("failed to open url: {}", e))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| format!("failed to open url: {}", e))?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/c", "start", &url])
+            .spawn()
+            .map_err(|e| format!("failed to open url: {}", e))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn session_set_title(
+    state: State<'_, AppState>,
+    session_id: String,
+    title: String,
+) -> Result<(), String> {
+    let uuid = Uuid::parse_str(&session_id)
+        .map_err(|_| format!("invalid session id: '{}'", session_id))?;
+    let mut manager = state.lock().await;
+    manager.set_session_title(uuid, title)
+}
+
 fn merge_json(base: &mut serde_json::Value, update: &serde_json::Value) {
     if let (serde_json::Value::Object(base_map), serde_json::Value::Object(update_map)) =
         (base, update)

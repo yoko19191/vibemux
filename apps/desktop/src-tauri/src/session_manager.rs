@@ -232,6 +232,17 @@ impl SessionManager {
         Ok(())
     }
 
+    pub fn set_session_title(&mut self, session_id: Uuid, title: String) -> Result<(), String> {
+        let managed = self
+            .sessions
+            .get_mut(&session_id)
+            .ok_or_else(|| format!("session {} not found", session_id))?;
+        managed.session.terminal_title = title;
+        managed.session.updated_at = Utc::now();
+        let _ = self.event_tx.send(MuxEvent::SessionUpdated { session_id });
+        Ok(())
+    }
+
     pub fn set_session_color(&mut self, session_id: Uuid, color: ColorToken) -> Result<(), String> {
         let managed = self
             .sessions

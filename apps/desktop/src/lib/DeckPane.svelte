@@ -5,6 +5,7 @@
   interface Props {
     sessionId: string;
     sessionName: string;
+    terminalTitle?: string;
     color: ColorToken;
     isFocused: boolean;
     width: number;
@@ -19,11 +20,13 @@
   }
 
   let {
-    sessionId, sessionName, color, isFocused, width,
+    sessionId, sessionName, terminalTitle = "", color, isFocused, width,
     isRenaming = false,
     onReady, onclick, ondragstart, ondragover, ondrop,
     onRenameConfirm, onRenameCancel,
   }: Props = $props();
+
+  let displayName = $derived(terminalTitle || sessionName);
 
   const colorMap: Record<ColorToken, string> = {
     Red: "#ef4444",
@@ -92,7 +95,7 @@
         onclick={(e) => e.stopPropagation()}
       />
     {:else}
-      <span class="session-name">{sessionName}</span>
+      <span class="session-name">{displayName}</span>
     {/if}
   </div>
   <div class="terminal-container">

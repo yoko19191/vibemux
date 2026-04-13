@@ -75,6 +75,18 @@
         sessions = sessions.map((s) =>
           s.id === muxEvent.sessionId ? { ...s, attentionState: muxEvent.attentionState } : s
         );
+      } else if (muxEvent.type === "sessionUpdated") {
+        // Refresh session snapshot to pick up title/name/color changes
+        invoke<import("./lib/types").SessionSnapshot>("session_get", { sessionId: muxEvent.sessionId })
+          .then((snap) => {
+            sessions = sessions.map((s) => s.id === snap.id ? snap : s);
+          })
+          .catch(() => {
+            // session_get not available — do a full workspace refresh
+            invoke<import("./lib/types").WorkspaceSnapshot>("workspace_get_snapshot")
+              .then((ws) => { sessions = ws.sessions; })
+              .catch(console.error);
+          });
       }
     });
 

@@ -3,6 +3,7 @@
   import { Terminal } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
   import { WebglAddon } from "@xterm/addon-webgl";
+  import { WebLinksAddon } from "@xterm/addon-web-links";
   import { invoke } from "@tauri-apps/api/core";
 
   interface Props {
@@ -16,6 +17,7 @@
   let terminal: Terminal | null = null;
   let fitAddon: FitAddon | null = null;
   let resizeObserver: ResizeObserver | null = null;
+  let rendererType: 'webgl' | 'canvas' = $state('webgl');
 
   // Context menu state
   let contextMenu: { x: number; y: number } | null = $state(null);
@@ -62,6 +64,13 @@
     fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
 
+    // Web links addon — opens URLs in system browser
+    const webLinksAddon = new WebLinksAddon((e, uri) => {
+      e.preventDefault();
+      invoke("open_url", { url: uri }).catch(console.error);
+    });
+    terminal.loadAddon(webLinksAddon);
+
     terminal.open(containerEl);
 
     // Try WebGL renderer, fall back to canvas
@@ -69,10 +78,13 @@
       const webglAddon = new WebglAddon();
       webglAddon.onContextLoss(() => {
         webglAddon.dispose();
+        rendererType = 'canvas';
       });
       terminal.loadAddon(webglAddon);
+      rendererType = 'webgl';
     } catch {
       // Canvas fallback is automatic
+      rendererType = 'canvas';
     }
 
     fitAddon.fit();
@@ -85,6 +97,16 @@
     // Track selection state
     terminal.onSelectionChange(() => {
       hasSelection = (terminal?.getSelection().length ?? 0) > 0;
+    });
+
+    // OSC title sequences (OSC 0 and OSC 2 set terminal title)
+    terminal.parser.registerOscHandler(0, (data: string) => {
+      invoke("session_set_title", { sessionId, title: data }).catch(console.error);
+      return true;
+    });
+    terminal.parser.registerOscHandler(2, (data: string) => {
+      invoke("session_set_title", { sessionId, title: data }).catch(console.error);
+      return true;
     });
 
     // Resize observer

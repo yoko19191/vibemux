@@ -43,6 +43,10 @@
     return sessions.find((s) => s.id === sessionId)?.name ?? "";
   }
 
+  function getTerminalTitle(sessionId: string): string {
+    return sessions.find((s) => s.id === sessionId)?.terminalTitle ?? "";
+  }
+
   function handleDragStart(sessionId: string, e: DragEvent) {
     draggedSessionId = sessionId;
     e.dataTransfer?.setData("text/plain", sessionId);
@@ -104,6 +108,7 @@
     <DeckPane
       sessionId={layout.sessionId}
       sessionName={getName(layout.sessionId)}
+      terminalTitle={getTerminalTitle(layout.sessionId)}
       color={getColor(layout.sessionId)}
       isFocused={layout.isFocused}
       width={layout.width}
