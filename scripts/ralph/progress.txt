@@ -252,3 +252,20 @@
   - restoringSessionIds is a Set<string> in $state — must reassign (new Set(...)) to trigger reactivity
   - cancelReplay on sessionExited prevents stale replay state
 ---
+
+## 2026-04-13 - US-021
+- Added MuxEvent::AttentionChanged variant to session_manager.rs
+- Added ManagedSession.thermal_state and .attention_state as Arc<Mutex<...>> shared state
+- Updated create_session to create shared state and pass to route_output
+- route_output detects attention for warm sessions: NeedsInput patterns first, then Failed, then Active for new output
+- monitor_exit emits AttentionChanged (Done for exit 0, Failed for non-zero/killed) before SessionExited
+- detect_attention_state() free function with NeedsInput and Failed pattern matching
+- Added FrontendEvent::AttentionChanged in events.rs, wired in convert_event()
+- Added attentionChanged type to MuxEvent union in types.ts
+- App.svelte: handles attentionChanged event, updates session attentionState in local state
+- Files changed: src-tauri/src/session_manager.rs, src-tauri/src/events.rs, src/lib/types.ts, src/App.svelte
+- **Learnings for future iterations:**
+  - NeedsInput patterns must be checked before Failed to avoid false positives (e.g. "error" in "press enter")
+  - Shared Arc<Mutex<ThermalState>> allows route_output task to check current thermal state without holding SessionManager lock
+  - detect_attention_state returns None for "no special pattern" — caller handles Active promotion
+---

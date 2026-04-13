@@ -54,4 +54,5 @@ export type MuxEvent =
   | { type: "sessionParked"; sessionId: string }
   | { type: "replayStart"; sessionId: string; fromSeq: number; toSeq: number }
   | { type: "replayChunk"; sessionId: string; data: string; seq: number }
-  | { type: "replayEnd"; sessionId: string };
+  | { type: "replayEnd"; sessionId: string }
+  | { type: "attentionChanged"; sessionId: string; attentionState: AttentionState };

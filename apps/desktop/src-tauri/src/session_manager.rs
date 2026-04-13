@@ -50,12 +50,18 @@ pub enum MuxEvent {
     ReplayEnd {
         session_id: Uuid,
     },
+    AttentionChanged {
+        session_id: Uuid,
+        attention_state: AttentionState,
+    },
 }
 
 struct ManagedSession {
     session: Session,
     pty: PtyHost,
     output_buffer: Arc<Mutex<OutputRingBuffer>>,
+    thermal_state: Arc<Mutex<ThermalState>>,
+    attention_state: Arc<Mutex<AttentionState>>,
 }
 
 pub struct SessionManager {
@@ -139,13 +145,17 @@ impl SessionManager {
         self.workspace.focused_session_id = Some(session_id);
 
         let output_buffer = Arc::new(Mutex::new(OutputRingBuffer::new()));
+        let shared_thermal = Arc::new(Mutex::new(session.thermal_state.clone()));
+        let shared_attention = Arc::new(Mutex::new(session.attention_state.clone()));
 
         // Spawn output routing task
         let buf_clone = Arc::clone(&output_buffer);
+        let thermal_clone = Arc::clone(&shared_thermal);
+        let attention_clone = Arc::clone(&shared_attention);
         let event_tx = self.event_tx.clone();
         let sid = session_id;
         tokio::spawn(async move {
-            Self::route_output(sid, output_rx, buf_clone, event_tx).await;
+            Self::route_output(sid, output_rx, buf_clone, event_tx, thermal_clone, attention_clone).await;
         });
 
         // Spawn exit monitoring task
@@ -161,6 +171,8 @@ impl SessionManager {
                 session,
                 pty,
                 output_buffer,
+                thermal_state: shared_thermal,
+                attention_state: shared_attention,
             },
         );
 
@@ -338,6 +350,8 @@ impl SessionManager {
         mut output_rx: mpsc::UnboundedReceiver<Vec<u8>>,
         buffer: Arc<Mutex<OutputRingBuffer>>,
         event_tx: mpsc::UnboundedSender<MuxEvent>,
+        thermal_state: Arc<Mutex<ThermalState>>,
+        attention_state: Arc<Mutex<AttentionState>>,
     ) {
         while let Some(data) = output_rx.recv().await {
             let seq = {
@@ -346,9 +360,36 @@ impl SessionManager {
             };
             let _ = event_tx.send(MuxEvent::SessionOutput {
                 session_id,
-                data,
+                data: data.clone(),
                 seq,
             });
+
+            // Attention state detection for warm sessions
+            let thermal = thermal_state.lock().await.clone();
+            if thermal == ThermalState::Warm {
+                let text = String::from_utf8_lossy(&data).to_lowercase();
+                let new_state = detect_attention_state(&text);
+                if let Some(new_attention) = new_state {
+                    let mut current = attention_state.lock().await;
+                    if *current != new_attention {
+                        *current = new_attention.clone();
+                        let _ = event_tx.send(MuxEvent::AttentionChanged {
+                            session_id,
+                            attention_state: new_attention,
+                        });
+                    }
+                } else {
+                    // New output on warm session → Active (if not already Failed/NeedsInput/Done)
+                    let mut current = attention_state.lock().await;
+                    if *current == AttentionState::Normal {
+                        *current = AttentionState::Active;
+                        let _ = event_tx.send(MuxEvent::AttentionChanged {
+                            session_id,
+                            attention_state: AttentionState::Active,
+                        });
+                    }
+                }
+            }
         }
     }
 
@@ -358,14 +399,52 @@ impl SessionManager {
         event_tx: mpsc::UnboundedSender<MuxEvent>,
     ) {
         if let Some(status) = exit_rx.recv().await {
-            let process_state = match status {
-                PtyExitStatus::Exited(code) => ProcessState::Exited { code },
+            let process_state = match &status {
+                PtyExitStatus::Exited(code) => ProcessState::Exited { code: *code },
                 PtyExitStatus::Killed => ProcessState::Killed,
             };
+            // Emit attention change based on exit status
+            let attention = match &status {
+                PtyExitStatus::Exited(Some(0)) => AttentionState::Done,
+                PtyExitStatus::Exited(_) => AttentionState::Failed,
+                PtyExitStatus::Killed => AttentionState::Failed,
+            };
+            let _ = event_tx.send(MuxEvent::AttentionChanged {
+                session_id,
+                attention_state: attention,
+            });
             let _ = event_tx.send(MuxEvent::SessionExited {
                 session_id,
                 process_state,
             });
         }
     }
+}
+
+fn detect_attention_state(text: &str) -> Option<AttentionState> {
+    // NeedsInput patterns take priority
+    let needs_input_patterns = [
+        "continue?",
+        "do you want",
+        "press enter",
+        "y/n",
+        "[y/n]",
+        "[y/n]",
+        "(yes/no)",
+    ];
+    for pattern in &needs_input_patterns {
+        if text.contains(pattern) {
+            return Some(AttentionState::NeedsInput);
+        }
+    }
+
+    // Failed patterns
+    let failed_patterns = ["error", "failed", "panic", "fatal", "exception"];
+    for pattern in &failed_patterns {
+        if text.contains(pattern) {
+            return Some(AttentionState::Failed);
+        }
+    }
+
+    None
 }

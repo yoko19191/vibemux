@@ -385,8 +385,8 @@
         "Typecheck passes"
       ],
       "priority": 21,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "detect_attention_state() in session_manager.rs checks NeedsInput patterns first, then Failed patterns. route_output detects attention for warm sessions, emits AttentionChanged. monitor_exit emits Done/Failed based on exit code. Frontend handles attentionChanged event."
     },
     {
       "id": "US-022",

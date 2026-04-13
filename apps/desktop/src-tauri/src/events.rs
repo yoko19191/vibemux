@@ -50,6 +50,11 @@ pub enum FrontendEvent {
     ReplayEnd {
         session_id: String,
     },
+    #[serde(rename_all = "camelCase")]
+    AttentionChanged {
+        session_id: String,
+        attention_state: crate::models::AttentionState,
+    },
 }
 
 const BATCH_INTERVAL_MS: u64 = 12;
@@ -129,6 +134,13 @@ fn convert_event(event: MuxEvent) -> FrontendEvent {
         },
         MuxEvent::ReplayEnd { session_id } => FrontendEvent::ReplayEnd {
             session_id: session_id.to_string(),
+        },
+        MuxEvent::AttentionChanged {
+            session_id,
+            attention_state,
+        } => FrontendEvent::AttentionChanged {
+            session_id: session_id.to_string(),
+            attention_state,
         },
     }
 }

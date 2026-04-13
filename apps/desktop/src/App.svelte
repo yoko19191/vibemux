@@ -68,6 +68,10 @@
         onReplayChunk(muxEvent.sessionId, muxEvent.data);
       } else if (muxEvent.type === "replayEnd") {
         onReplayEnd(muxEvent.sessionId);
+      } else if (muxEvent.type === "attentionChanged") {
+        sessions = sessions.map((s) =>
+          s.id === muxEvent.sessionId ? { ...s, attentionState: muxEvent.attentionState } : s
+        );
       }
     });
 
