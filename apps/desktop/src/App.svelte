@@ -3,30 +3,40 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import Deck from "./lib/Deck.svelte";
-  import type { MuxEvent, SessionSnapshot, WorkspaceSnapshot } from "./lib/types";
+  import NewSessionPanel from "./lib/NewSessionPanel.svelte";
+  import type { MuxEvent, SessionSnapshot } from "./lib/types";
 
   let sessions: SessionSnapshot[] = $state([]);
   let focusedSessionId: string | null = $state(null);
   let error: string | null = $state(null);
+  let navMode = $state(false);
+  let showNewSession = $state(false);
+  let homeCwd = $state("/");
   let terminalApis: Map<string, { writeOutput: (data: string) => void }> = new Map();
   let unlisten: (() => void) | null = null;
 
+  const isMac = navigator.platform.toUpperCase().includes("MAC");
+
   onMount(async () => {
-    // Listen for mux events
     unlisten = await listen<MuxEvent>("mux-event", (event) => {
       const muxEvent = event.payload;
       if (muxEvent.type === "sessionOutput") {
         terminalApis.get(muxEvent.sessionId)?.writeOutput(muxEvent.data);
+      } else if (muxEvent.type === "sessionExited") {
+        sessions = sessions.filter((s) => s.id !== muxEvent.sessionId);
+        terminalApis.delete(muxEvent.sessionId);
+        if (focusedSessionId === muxEvent.sessionId) {
+          focusedSessionId = sessions[0]?.id ?? null;
+        }
       }
     });
 
-    // Create first session
     try {
-      const home = await getHomeDir();
+      homeCwd = await getHomeDir();
       const snapshot: SessionSnapshot = await invoke("session_create", {
         payload: {
           name: "shell",
-          cwd: home,
+          cwd: homeCwd,
           commandType: "shell",
         },
       });
@@ -62,7 +72,107 @@
       console.error("Failed to focus session:", e);
     }
   }
+
+  function handleKeydown(e: KeyboardEvent) {
+    // Prefix key: Cmd+Space (Mac) or Ctrl+Space (other)
+    const prefixKey = e.code === "Space" && (isMac ? e.metaKey : e.ctrlKey);
+
+    if (prefixKey) {
+      e.preventDefault();
+      if (showNewSession) {
+        showNewSession = false;
+      }
+      navMode = !navMode;
+      return;
+    }
+
+    if (!navMode) return;
+
+    // Navigation mode keybindings
+    switch (e.key) {
+      case "Escape":
+        navMode = false;
+        e.preventDefault();
+        break;
+      case "h":
+      case "ArrowLeft":
+        focusPrevSession();
+        navMode = false;
+        e.preventDefault();
+        break;
+      case "l":
+      case "ArrowRight":
+        focusNextSession();
+        navMode = false;
+        e.preventDefault();
+        break;
+      case "n":
+      case "N":
+        showNewSession = true;
+        navMode = false;
+        e.preventDefault();
+        break;
+      case "X":
+        if (e.shiftKey) {
+          killCurrentSession();
+        }
+        navMode = false;
+        e.preventDefault();
+        break;
+      case "x":
+        closeCurrentSession();
+        navMode = false;
+        e.preventDefault();
+        break;
+    }
+  }
+
+  function focusPrevSession() {
+    if (sessions.length < 2 || !focusedSessionId) return;
+    const idx = sessions.findIndex((s) => s.id === focusedSessionId);
+    const prevIdx = (idx - 1 + sessions.length) % sessions.length;
+    handleFocusSession(sessions[prevIdx].id);
+  }
+
+  function focusNextSession() {
+    if (sessions.length < 2 || !focusedSessionId) return;
+    const idx = sessions.findIndex((s) => s.id === focusedSessionId);
+    const nextIdx = (idx + 1) % sessions.length;
+    handleFocusSession(sessions[nextIdx].id);
+  }
+
+  async function closeCurrentSession() {
+    if (!focusedSessionId) return;
+    try {
+      await invoke("session_close", { sessionId: focusedSessionId });
+      sessions = sessions.filter((s) => s.id !== focusedSessionId);
+      terminalApis.delete(focusedSessionId);
+      focusedSessionId = sessions[0]?.id ?? null;
+    } catch (e) {
+      console.error("Failed to close session:", e);
+    }
+  }
+
+  async function killCurrentSession() {
+    if (!focusedSessionId) return;
+    try {
+      await invoke("session_kill", { sessionId: focusedSessionId });
+      sessions = sessions.filter((s) => s.id !== focusedSessionId);
+      terminalApis.delete(focusedSessionId);
+      focusedSessionId = sessions[0]?.id ?? null;
+    } catch (e) {
+      console.error("Failed to kill session:", e);
+    }
+  }
+
+  function handleSessionCreated(snapshot: SessionSnapshot) {
+    sessions = [...sessions, snapshot];
+    focusedSessionId = snapshot.id;
+    showNewSession = false;
+  }
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 <main>
   {#if error}
@@ -76,6 +186,21 @@
     />
   {:else}
     <div class="loading">Starting session...</div>
+  {/if}
+
+  {#if navMode}
+    <div class="nav-indicator">
+      <span class="nav-badge">NAV</span>
+      <span class="nav-hint">h/l: switch · n: new · x: close · X: kill · esc: cancel</span>
+    </div>
+  {/if}
+
+  {#if showNewSession}
+    <NewSessionPanel
+      defaultCwd={homeCwd}
+      onCreated={handleSessionCreated}
+      onCancel={() => (showNewSession = false)}
+    />
   {/if}
 </main>
 
@@ -91,6 +216,7 @@
     width: 100vw;
     height: 100vh;
     overflow: hidden;
+    position: relative;
   }
 
   .error {
@@ -113,5 +239,35 @@
     color: #d9d4c7;
     font-family: system-ui, -apple-system, sans-serif;
     font-size: 1rem;
+  }
+
+  .nav-indicator {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.4rem 0.75rem;
+    background: rgba(59, 130, 246, 0.15);
+    border-top: 1px solid #3b82f6;
+    font-family: system-ui, -apple-system, sans-serif;
+    z-index: 50;
+  }
+
+  .nav-badge {
+    background: #3b82f6;
+    color: white;
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+
+  .nav-hint {
+    color: #999;
+    font-size: 0.75rem;
   }
 </style>
