@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod events;
 pub mod models;
 pub mod pty_host;
 pub mod ring_buffer;
@@ -12,7 +13,7 @@ use session_manager::SessionManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let (event_tx, _event_rx) = mpsc::unbounded_channel();
+    let (event_tx, event_rx) = mpsc::unbounded_channel();
     let manager = SessionManager::new(event_tx);
     let state: AppState = Arc::new(Mutex::new(manager));
 
@@ -24,6 +25,11 @@ pub fn run() {
             commands::session_resize,
             commands::workspace_get_snapshot,
         ])
+        .setup(|app| {
+            let handle = app.handle().clone();
+            events::start_event_bridge(handle, event_rx);
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
