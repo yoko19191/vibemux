@@ -125,7 +125,7 @@ pub struct KeysConfig {
 impl Default for KeysConfig {
     fn default() -> Self {
         Self {
-            prefix: "cmd+space".to_string(),
+            prefix: "ctrl+b".to_string(),
         }
     }
 }

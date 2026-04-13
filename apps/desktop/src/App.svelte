@@ -10,6 +10,8 @@
   import HelpOverlay from "./lib/HelpOverlay.svelte";
   import { onReplayStart, onReplayChunk, onReplayEnd, cancelReplay } from "./lib/terminalReplay";
   import type { MuxEvent, SessionSnapshot } from "./lib/types";
+  import { parsePrefixKey, matchesPrefixKey, formatPrefixKey } from "./lib/keymap";
+  import type { PrefixKeyMatcher } from "./lib/keymap";
 
   let sessions: SessionSnapshot[] = $state([]);
   let focusedSessionId: string | null = $state(null);
@@ -26,8 +28,9 @@
   let unlisten: (() => void) | null = null;
   let selectedShelfIdx: number | null = $state(null);
   let renamingSessionId: string | null = $state(null);
-
-  const isMac = navigator.platform.toUpperCase().includes("MAC");
+  let prefixKeyConfig = $state("ctrl+b");
+  let prefixKeyMatcher: PrefixKeyMatcher = $derived(parsePrefixKey(prefixKeyConfig));
+  let prefixKeyDisplay = $derived(formatPrefixKey(prefixKeyConfig));
 
   let hotSessions = $derived(sessions.filter((s) => s.thermalState === "Hot"));
   let warmSessions = $derived(sessions.filter((s) => s.thermalState === "Warm"));
@@ -103,6 +106,16 @@
       console.log("[vibemux] config_get_error done:", cfgErr);
       if (cfgErr) configError = cfgErr;
 
+      // Load prefix key from config
+      try {
+        const cfg = await invoke<{ keys?: { prefix?: string } }>("config_get");
+        if (cfg?.keys?.prefix) {
+          prefixKeyConfig = cfg.keys.prefix;
+        }
+      } catch {
+        // keep default
+      }
+
       console.log("[vibemux] calling session_create...");
       const snapshot: SessionSnapshot = await invoke("session_create", {
         payload: {
@@ -147,10 +160,7 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    // Prefix key: Cmd+Space (Mac) or Ctrl+Space (other)
-    const prefixKey = e.code === "Space" && (isMac ? e.metaKey : e.ctrlKey);
-
-    if (prefixKey) {
+    if (matchesPrefixKey(e, prefixKeyMatcher)) {
       e.preventDefault();
       if (showNewSession) {
         showNewSession = false;
@@ -366,7 +376,7 @@
 
   {#if navMode}
     <div class="nav-indicator" class:shelf-offset={warmSessions.length > 0}>
-      <span class="nav-badge">NAV</span>
+      <span class="nav-badge">NAV ({prefixKeyDisplay})</span>
       <span class="nav-hint">h/l: switch · n: new · b: park · j/k: shelf · Enter: recall · x: close · X: kill · esc: cancel</span>
     </div>
   {/if}
@@ -393,7 +403,7 @@
 
   {#if showHelp}
     <HelpOverlay
-      prefixKey={isMac ? "Cmd+Space" : "Ctrl+Space"}
+      prefixKey={prefixKeyDisplay}
       onClose={() => (showHelp = false)}
     />
   {/if}
