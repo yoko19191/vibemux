@@ -1,6 +1,9 @@
 <script lang="ts">
   import TerminalPane from "./TerminalPane.svelte";
+  import ContextMenu from "./ContextMenu.svelte";
+  import type { ContextMenuItem } from "./ContextMenu.svelte";
   import type { ColorToken } from "./types";
+  import { invoke } from "@tauri-apps/api/core";
 
   interface Props {
     sessionId: string;
@@ -17,13 +20,15 @@
     ondrop?: (e: DragEvent) => void;
     onRenameConfirm?: (name: string) => void;
     onRenameCancel?: () => void;
+    onPark?: () => void;
+    onClose?: () => void;
   }
 
   let {
     sessionId, sessionName, terminalTitle = "", color, isFocused, width,
     isRenaming = false,
     onReady, onclick, ondragstart, ondragover, ondrop,
-    onRenameConfirm, onRenameCancel,
+    onRenameConfirm, onRenameCancel, onPark, onClose,
   }: Props = $props();
 
   let displayName = $derived(terminalTitle || sessionName);
@@ -40,16 +45,28 @@
     Pink: "#ec4899",
   };
 
+  const colorTokens: { token: ColorToken; color: string }[] = [
+    { token: "Red", color: "#ef4444" },
+    { token: "Orange", color: "#f97316" },
+    { token: "Yellow", color: "#eab308" },
+    { token: "Green", color: "#22c55e" },
+    { token: "Cyan", color: "#06b6d4" },
+    { token: "Blue", color: "#3b82f6" },
+    { token: "Purple", color: "#a855f7" },
+    { token: "Pink", color: "#ec4899" },
+  ];
+
   let borderColor = $derived(colorMap[color] ?? "#666");
   let opacity = $derived(isFocused ? 1 : 0.8);
   let dragOver = $state(false);
   let renameValue = $state("");
   let renameInput: HTMLInputElement | null = $state(null);
+  let isHovered = $state(false);
+  let headerContextMenu: { x: number; y: number } | null = $state(null);
 
   $effect(() => {
     if (isRenaming) {
       renameValue = sessionName;
-      // Focus input on next tick
       setTimeout(() => renameInput?.focus(), 0);
     }
   });
@@ -65,6 +82,60 @@
       onRenameCancel?.();
     }
   }
+
+  function handleHeaderContextMenu(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    headerContextMenu = { x: e.clientX, y: e.clientY };
+  }
+
+  function buildContextMenuItems(): ContextMenuItem[] {
+    return [
+      { label: "Park to Shelf", onClick: () => onPark?.() },
+      { label: "Rename", onClick: startRename },
+      {
+        type: "submenu",
+        label: "Change Color",
+        children: colorTokens.map((c) => ({
+          token: c.token,
+          color: c.color,
+          onSelect: () => invoke("session_set_color", { sessionId, color: c.token }).catch(console.error),
+        })),
+      },
+      { type: "separator" },
+      { label: "Close", onClick: () => onClose?.() },
+      { label: "Kill", color: "#ef4444", onClick: () => invoke("session_kill", { sessionId }).catch(console.error) },
+    ];
+  }
+
+  function startRename() {
+    // We do this by calling onRenameConfirm with the current name (no-op rename)
+    // Actually we need a dedicated onStartRename callback — but to keep it simple,
+    // we'll just call onRenameConfirm with the current name which triggers the rename flow
+    // The parent sets renamingSessionId which causes isRenaming=true
+    // For now, we'll use a workaround: dispatch a custom event
+    const el = document.querySelector(`[data-session-id="${sessionId}"]`);
+    el?.dispatchEvent(new CustomEvent("startRename", { bubbles: true, detail: { sessionId } }));
+  }
+
+  function getContextMenuItems(): ContextMenuItem[] {
+    return [
+      { label: "Park to Shelf", onClick: () => onPark?.() },
+      { label: "Rename", onClick: startRename },
+      {
+        type: "submenu",
+        label: "Change Color",
+        children: colorTokens.map((c) => ({
+          token: c.token,
+          color: c.color,
+          onSelect: () => invoke("session_set_color", { sessionId, color: c.token }).catch(console.error),
+        })),
+      },
+      { type: "separator" },
+      { label: "Close", onClick: () => onClose?.() },
+      { label: "Kill", color: "#ef4444", onClick: () => invoke("session_kill", { sessionId }).catch(console.error) },
+    ];
+  }
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -72,8 +143,11 @@
 <div
   class="deck-pane"
   class:drag-over={dragOver}
+  data-session-id={sessionId}
   style="width: {width}px; border-color: {borderColor}; opacity: {opacity};"
   onclick={onclick}
+  onmouseenter={() => (isHovered = true)}
+  onmouseleave={() => (isHovered = false)}
   ondragover={(e) => { e.preventDefault(); dragOver = true; ondragover?.(e); }}
   ondragleave={() => { dragOver = false; }}
   ondrop={(e) => { dragOver = false; ondrop?.(e); }}
@@ -83,9 +157,14 @@
     class="drag-handle"
     draggable="true"
     ondragstart={ondragstart}
+    oncontextmenu={handleHeaderContextMenu}
     style="background: {borderColor};"
   ></div>
-  <div class="pane-header" style="border-bottom-color: {borderColor}20;">
+  <div
+    class="pane-header"
+    style="border-bottom-color: {borderColor}20;"
+    oncontextmenu={handleHeaderContextMenu}
+  >
     {#if isRenaming}
       <!-- svelte-ignore a11y_autofocus -->
       <input
@@ -100,12 +179,27 @@
       {#if rendererType === 'canvas'}
         <span class="renderer-badge">canvas</span>
       {/if}
+      {#if isFocused && isHovered}
+        <div class="header-actions" onclick={(e) => e.stopPropagation()}>
+          <button class="hdr-btn" title="Park to Shelf (Ctrl+B, B)" onclick={() => onPark?.()}>⬇</button>
+          <button class="hdr-btn" title="Rename (Ctrl+B, R)" onclick={startRename}>✎</button>
+          <button class="hdr-btn hdr-btn-close" title="Close (Ctrl+B, X)" onclick={() => onClose?.()}>✕</button>
+        </div>
+      {/if}
     {/if}
   </div>
   <div class="terminal-container">
     <TerminalPane {sessionId} {onReady} onRendererType={(t) => (rendererType = t)} />
   </div>
 </div>
+
+{#if headerContextMenu}
+  <ContextMenu
+    position={headerContextMenu}
+    items={getContextMenuItems()}
+    onClose={() => (headerContextMenu = null)}
+  />
+{/if}
 
 <style>
   .deck-pane {
@@ -181,5 +275,39 @@
   .terminal-container {
     flex: 1;
     overflow: hidden;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    flex-shrink: 0;
+    margin-left: 0.25rem;
+  }
+
+  .hdr-btn {
+    background: none;
+    border: none;
+    color: #666;
+    cursor: pointer;
+    font-size: 0.7rem;
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    line-height: 1;
+  }
+
+  .hdr-btn:hover {
+    background: #2a2a2a;
+    color: #d9d4c7;
+  }
+
+  .hdr-btn-close:hover {
+    background: #ef444420;
+    color: #ef4444;
   }
 </style>

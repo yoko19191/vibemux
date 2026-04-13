@@ -6,9 +6,13 @@
     sessions: SessionSnapshot[];
     onRecall?: (sessionId: string) => void;
     selectedIdx?: number | null;
+    onRename?: (sessionId: string, name: string) => void;
+    onSetColor?: (sessionId: string, color: string) => void;
+    onClose?: (sessionId: string) => void;
+    onKill?: (sessionId: string) => void;
   }
 
-  let { sessions, onRecall, selectedIdx = null }: Props = $props();
+  let { sessions, onRecall, selectedIdx = null, onRename, onSetColor, onClose, onKill }: Props = $props();
 </script>
 
 {#if sessions.length > 0}
@@ -19,7 +23,13 @@
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class:selected={selectedIdx === i} onclick={() => onRecall?.(session.id)}>
-          <ShelfCard {session} />
+          <ShelfCard
+            {session}
+            onRename={(name) => onRename?.(session.id, name)}
+            onSetColor={(color) => onSetColor?.(session.id, color)}
+            onClose={() => onClose?.(session.id)}
+            onKill={() => onKill?.(session.id)}
+          />
         </div>
       {/each}
     </div>

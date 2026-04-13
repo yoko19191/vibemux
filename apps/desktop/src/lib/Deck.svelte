@@ -13,6 +13,8 @@
     onFocusSession?: (sessionId: string) => void;
     onRenameConfirm?: (sessionId: string, name: string) => void;
     onRenameCancel?: () => void;
+    onPark?: (sessionId: string) => void;
+    onClose?: (sessionId: string) => void;
   }
 
   let {
@@ -20,6 +22,7 @@
     renamingSessionId = null,
     onTerminalReady, onFocusSession,
     onRenameConfirm, onRenameCancel,
+    onPark, onClose,
   }: Props = $props();
 
   let containerEl: HTMLDivElement;
@@ -123,6 +126,8 @@
       ondrop={(e) => handleDrop(layout.sessionId, e)}
       onRenameConfirm={(name) => onRenameConfirm?.(layout.sessionId, name)}
       onRenameCancel={onRenameCancel}
+      onPark={() => onPark?.(layout.sessionId)}
+      onClose={() => onClose?.(layout.sessionId)}
     />
   {/each}
 </div>

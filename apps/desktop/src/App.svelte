@@ -363,6 +363,46 @@
     focusedSessionId = snapshot.id;
     showNewSession = false;
   }
+
+  async function closeSessionById(sessionId: string) {
+    try {
+      await invoke("session_close", { sessionId });
+      sessions = sessions.filter((s) => s.id !== sessionId);
+      terminalApis.delete(sessionId);
+      if (focusedSessionId === sessionId) {
+        focusedSessionId = sessions.find((s) => s.thermalState === "Hot")?.id ?? null;
+      }
+    } catch (e) {
+      console.error("Failed to close session:", e);
+    }
+  }
+
+  async function handleShelfRename(sessionId: string, name: string) {
+    try {
+      await invoke("session_rename", { sessionId, name });
+      sessions = sessions.map((s) => s.id === sessionId ? { ...s, name } : s);
+    } catch (e) {
+      console.error("Failed to rename session:", e);
+    }
+  }
+
+  async function handleShelfSetColor(sessionId: string, color: string) {
+    try {
+      await invoke("session_set_color", { sessionId, color });
+    } catch (e) {
+      console.error("Failed to set color:", e);
+    }
+  }
+
+  async function handleShelfKill(sessionId: string) {
+    try {
+      await invoke("session_kill", { sessionId });
+      sessions = sessions.filter((s) => s.id !== sessionId);
+      terminalApis.delete(sessionId);
+    } catch (e) {
+      console.error("Failed to kill session:", e);
+    }
+  }
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -395,6 +435,8 @@
         onFocusSession={handleFocusSession}
         onRenameConfirm={handleRenameConfirm}
         onRenameCancel={handleRenameCancel}
+        onPark={(sessionId) => invoke("session_park", { sessionId }).catch(console.error)}
+        onClose={closeSessionById}
       />
     {:else if sessions.length > 0}
       <div class="loading">All sessions parked</div>
@@ -403,7 +445,15 @@
     {/if}
   </div>
 
-  <Shelf sessions={warmSessions} onRecall={recallSession} selectedIdx={selectedShelfIdx} />
+  <Shelf
+    sessions={warmSessions}
+    onRecall={recallSession}
+    selectedIdx={selectedShelfIdx}
+    onRename={handleShelfRename}
+    onSetColor={handleShelfSetColor}
+    onClose={closeSessionById}
+    onKill={handleShelfKill}
+  />
 
   {#if navMode}
     <div class="nav-indicator" class:shelf-offset={warmSessions.length > 0}>
