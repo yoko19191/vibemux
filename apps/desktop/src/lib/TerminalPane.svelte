@@ -9,9 +9,10 @@
   interface Props {
     sessionId: string;
     onReady?: (api: { writeOutput: (data: string) => void }) => void;
+    onRendererType?: (type: 'webgl' | 'canvas') => void;
   }
 
-  let { sessionId, onReady }: Props = $props();
+  let { sessionId, onReady, onRendererType }: Props = $props();
 
   let containerEl: HTMLDivElement;
   let terminal: Terminal | null = null;
@@ -79,12 +80,15 @@
       webglAddon.onContextLoss(() => {
         webglAddon.dispose();
         rendererType = 'canvas';
+        onRendererType?.('canvas');
       });
       terminal.loadAddon(webglAddon);
       rendererType = 'webgl';
+      onRendererType?.('webgl');
     } catch {
       // Canvas fallback is automatic
       rendererType = 'canvas';
+      onRendererType?.('canvas');
     }
 
     fitAddon.fit();

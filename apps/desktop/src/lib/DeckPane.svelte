@@ -27,6 +27,7 @@
   }: Props = $props();
 
   let displayName = $derived(terminalTitle || sessionName);
+  let rendererType: 'webgl' | 'canvas' = $state('webgl');
 
   const colorMap: Record<ColorToken, string> = {
     Red: "#ef4444",
@@ -96,10 +97,13 @@
       />
     {:else}
       <span class="session-name">{displayName}</span>
+      {#if rendererType === 'canvas'}
+        <span class="renderer-badge">canvas</span>
+      {/if}
     {/if}
   </div>
   <div class="terminal-container">
-    <TerminalPane {sessionId} {onReady} />
+    <TerminalPane {sessionId} {onReady} onRendererType={(t) => (rendererType = t)} />
   </div>
 </div>
 
@@ -141,6 +145,19 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    font-family: system-ui, -apple-system, sans-serif;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .renderer-badge {
+    font-size: 0.6rem;
+    padding: 0.05rem 0.3rem;
+    border-radius: 3px;
+    background: #55555520;
+    color: #666;
+    flex-shrink: 0;
+    margin-left: 0.25rem;
     font-family: system-ui, -apple-system, sans-serif;
   }
 
