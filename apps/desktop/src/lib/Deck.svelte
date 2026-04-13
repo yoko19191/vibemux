@@ -43,7 +43,12 @@
   }
 
   function getName(sessionId: string): string {
-    return sessions.find((s) => s.id === sessionId)?.name ?? "";
+    const s = sessions.find((s) => s.id === sessionId);
+    return s?.customName ?? s?.name ?? "";
+  }
+
+  function getCwd(sessionId: string): string {
+    return sessions.find((s) => s.id === sessionId)?.cwd ?? "";
   }
 
   function getTerminalTitle(sessionId: string): string {
@@ -114,6 +119,7 @@
     <DeckPane
       sessionId={layout.sessionId}
       sessionName={getName(layout.sessionId)}
+      sessionCwd={getCwd(layout.sessionId)}
       terminalTitle={getTerminalTitle(layout.sessionId)}
       color={getColor(layout.sessionId)}
       isFocused={layout.isFocused}

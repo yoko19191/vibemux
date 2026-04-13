@@ -49,6 +49,7 @@ pub enum ColorToken {
 pub struct Session {
     pub id: Uuid,
     pub name: String,
+    pub custom_name: Option<String>,
     pub cwd: String,
     pub command: SessionCommand,
     pub color: ColorToken,

@@ -27,6 +27,7 @@ export type ColorToken =
 export interface SessionSnapshot {
   id: string;
   name: string;
+  customName: string | null;
   cwd: string;
   color: ColorToken;
   thermalState: ThermalState;

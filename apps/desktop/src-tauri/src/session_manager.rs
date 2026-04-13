@@ -127,6 +127,7 @@ impl SessionManager {
         let session = Session {
             id: session_id,
             name,
+            custom_name: None,
             cwd,
             command,
             color,
@@ -226,7 +227,8 @@ impl SessionManager {
             .sessions
             .get_mut(&session_id)
             .ok_or_else(|| format!("session {} not found", session_id))?;
-        managed.session.name = name;
+        managed.session.name = name.clone();
+        managed.session.custom_name = Some(name);
         managed.session.updated_at = Utc::now();
         let _ = self.event_tx.send(MuxEvent::SessionUpdated { session_id });
         Ok(())
@@ -237,7 +239,11 @@ impl SessionManager {
             .sessions
             .get_mut(&session_id)
             .ok_or_else(|| format!("session {} not found", session_id))?;
-        managed.session.terminal_title = title;
+        managed.session.terminal_title = title.clone();
+        // Only update name from terminal title if user hasn't set a custom name
+        if managed.session.custom_name.is_none() {
+            managed.session.name = title;
+        }
         managed.session.updated_at = Utc::now();
         let _ = self.event_tx.send(MuxEvent::SessionUpdated { session_id });
         Ok(())

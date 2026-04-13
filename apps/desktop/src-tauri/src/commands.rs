@@ -25,6 +25,7 @@ pub struct CreateSessionPayload {
 pub struct SessionSnapshot {
     pub id: String,
     pub name: String,
+    pub custom_name: Option<String>,
     pub cwd: String,
     pub color: ColorToken,
     pub thermal_state: ThermalState,
@@ -52,6 +53,7 @@ fn session_to_snapshot(session: &crate::models::Session) -> SessionSnapshot {
     SessionSnapshot {
         id: session.id.to_string(),
         name: session.name.clone(),
+        custom_name: session.custom_name.clone(),
         cwd: session.cwd.clone(),
         color: session.color.clone(),
         thermal_state: session.thermal_state.clone(),

@@ -8,6 +8,7 @@
   interface Props {
     sessionId: string;
     sessionName: string;
+    sessionCwd?: string;
     terminalTitle?: string;
     color: ColorToken;
     isFocused: boolean;
@@ -25,13 +26,14 @@
   }
 
   let {
-    sessionId, sessionName, terminalTitle = "", color, isFocused, width,
+    sessionId, sessionName, sessionCwd = "", terminalTitle = "", color, isFocused, width,
     isRenaming = false,
     onReady, onclick, ondragstart, ondragover, ondrop,
     onRenameConfirm, onRenameCancel, onPark, onClose,
   }: Props = $props();
 
-  let displayName = $derived(terminalTitle || sessionName);
+  let displayName = $derived(sessionName || terminalTitle);
+  let shortCwd = $derived(sessionCwd.replace(/^.*\/([^/]+)$/, "$1") || sessionCwd);
   let rendererType: 'webgl' | 'canvas' = $state('webgl');
 
   const colorMap: Record<ColorToken, string> = {
@@ -176,6 +178,9 @@
       />
     {:else}
       <span class="session-name">{displayName}</span>
+      {#if shortCwd}
+        <span class="session-cwd">{shortCwd}</span>
+      {/if}
       {#if rendererType === 'canvas'}
         <span class="renderer-badge">canvas</span>
       {/if}
@@ -238,10 +243,22 @@
     color: #888;
     white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis;
+    text-overflow: clip;
     font-family: system-ui, -apple-system, sans-serif;
     flex: 1;
     min-width: 0;
+  }
+
+  .session-cwd {
+    font-size: 0.7rem;
+    color: #555;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: clip;
+    font-family: system-ui, -apple-system, sans-serif;
+    flex-shrink: 0;
+    max-width: 40%;
+    margin-left: 0.25rem;
   }
 
   .renderer-badge {
