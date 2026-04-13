@@ -213,3 +213,14 @@
   - Frontend must filter Deck to hot sessions only when park is implemented (warm sessions go to Shelf in US-018)
   - MuxEvent variants need matching FrontendEvent variants and convert_event() arms
 ---
+
+## 2026-04-13 - US-018
+- Created ShelfCard.svelte: color dot, session name, attention badge (Active=blue dot, NeedsInput=yellow, Failed=red, Done=gray), short cwd, relative time
+- Created Shelf.svelte: fixed bottom bar, horizontal scroll, SHELF label, renders ShelfCard per warm session
+- App.svelte: added hotSessions/warmSessions $derived, Deck now uses hotSessions only, Shelf renders warmSessions, nav indicator offsets 62px when shelf visible
+- Files changed: src/lib/ShelfCard.svelte (new), src/lib/Shelf.svelte (new), src/App.svelte
+- **Learnings for future iterations:**
+  - Shelf height is ~62px — nav indicator needs bottom: 62px offset when shelf is visible
+  - Use class:shelf-offset on nav-indicator to conditionally offset
+  - hotSessions/warmSessions derived from sessions array by thermalState filter
+---

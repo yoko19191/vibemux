@@ -3,6 +3,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import Deck from "./lib/Deck.svelte";
+  import Shelf from "./lib/Shelf.svelte";
   import NewSessionPanel from "./lib/NewSessionPanel.svelte";
   import type { MuxEvent, SessionSnapshot } from "./lib/types";
 
@@ -16,6 +17,9 @@
   let unlisten: (() => void) | null = null;
 
   const isMac = navigator.platform.toUpperCase().includes("MAC");
+
+  let hotSessions = $derived(sessions.filter((s) => s.thermalState === "Hot"));
+  let warmSessions = $derived(sessions.filter((s) => s.thermalState === "Warm"));
 
   onMount(async () => {
     unlisten = await listen<MuxEvent>("mux-event", (event) => {
@@ -198,22 +202,26 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<main>
+<main class:has-shelf={warmSessions.length > 0}>
   {#if error}
     <div class="error">{error}</div>
-  {:else if sessions.length > 0}
+  {:else if hotSessions.length > 0}
     <Deck
-      {sessions}
+      sessions={hotSessions}
       {focusedSessionId}
       onTerminalReady={handleTerminalReady}
       onFocusSession={handleFocusSession}
     />
+  {:else if sessions.length > 0}
+    <div class="loading">All sessions parked</div>
   {:else}
     <div class="loading">Starting session...</div>
   {/if}
 
+  <Shelf sessions={warmSessions} />
+
   {#if navMode}
-    <div class="nav-indicator">
+    <div class="nav-indicator" class:shelf-offset={warmSessions.length > 0}>
       <span class="nav-badge">NAV</span>
       <span class="nav-hint">h/l: switch · n: new · b: park · x: close · X: kill · esc: cancel</span>
     </div>
@@ -278,6 +286,10 @@
     border-top: 1px solid #3b82f6;
     font-family: system-ui, -apple-system, sans-serif;
     z-index: 50;
+  }
+
+  .nav-indicator.shelf-offset {
+    bottom: 62px;
   }
 
   .nav-badge {
