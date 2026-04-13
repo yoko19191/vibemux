@@ -89,3 +89,60 @@
   - DeckPane already had sessionCwd prop and shortCwd derived value from US-045 work
   - text-overflow: clip hides text without the ellipsis indicator
 ---
+
+## 2026-04-14 - US-048
+- Added `list_monospace_fonts` Tauri command in commands.rs: uses fc-list on macOS/Linux, falls back to preset list; Windows uses preset list
+- Registered list_monospace_fonts in lib.rs invoke_handler
+- Updated SettingsPanel.svelte: font family field now has a `<select>` dropdown populated by system fonts + text input below for manual entry
+- Files changed: apps/desktop/src-tauri/src/commands.rs, apps/desktop/src-tauri/src/lib.rs, apps/desktop/src/lib/SettingsPanel.svelte
+- **Learnings for future iterations:**
+  - fc-list output may have comma-separated family names per line — split on comma and dedup
+  - SettingsPanel uses a `systemFonts: string[]` $state loaded via loadFonts() on mount
+  - font-field CSS uses flex-direction: column to stack select + text input vertically
+---
+
+## 2026-04-14 - US-049
+- Extended presetThemes.ts: renamed "Dark" → "Vibemux Dark", added Nord, Dracula, One Dark, Gruvbox Dark, Tokyo Night (8 themes total)
+- Updated SettingsPanel.svelte: imported presetThemes, added preset-themes-grid above custom color inputs in Theme tab
+- Each card shows 3 color swatches (background/foreground/cursor) + theme name; clicking applies all colors via applyUpdate({ theme: preset })
+- Selected card highlighted with blue border (matches config.theme.background + foreground)
+- Files changed: apps/desktop/src/lib/presetThemes.ts, apps/desktop/src/lib/SettingsPanel.svelte
+- **Learnings for future iterations:**
+  - presetThemes.ts is shared between Onboarding and Settings — changes affect both
+  - Selected preset detection uses background+foreground match (not name) to handle custom edits
+---
+
+## 2026-04-14 - US-050
+- Updated DeckPane.svelte: added `borderStyle` derived value — focused pane gets 2px solid border, non-focused gets 1px solid at 50% opacity
+- Added border-radius: 4px to .deck-pane CSS
+- Files changed: apps/desktop/src/lib/DeckPane.svelte
+- **Learnings for future iterations:**
+  - DeckPane border is set via inline style `border: {borderStyle}` — replaces the old `border-color` approach
+  - Opacity suffix `80` on hex color = 50% alpha for non-focused pane border
+---
+
+## 2026-04-14 - US-051
+- Added `getCurrentWindow().setTitle()` call in App.svelte via `$effect` that reacts to focusedSessionId and sessions changes
+- Title format: `⚙ {name} — Vibemux` when busy (processState.type === "Running"), `{name} — Vibemux` otherwise, falls back to "Vibemux" when no hot session
+- Uses `customName ?? name` for the session display name
+- Files changed: apps/desktop/src/App.svelte
+- **Learnings for future iterations:**
+  - ProcessState is a tagged union `{ type: "Running" | "Starting" | ... }` — compare `.type` not the value directly
+  - `getCurrentWindow()` from `@tauri-apps/api/window` works in frontend for window title updates
+---
+
+## 2026-04-14 - US-052
+- Already committed in previous session (5ccdd49)
+- PRD updated to passes: true
+---
+
+## 2026-04-14 - US-053
+- Created BusyIndicator.svelte: 10x10px square outline with CSS rotate animation (1s linear infinite), color via prop
+- Updated DeckPane.svelte: added processState prop, isBusy derived, BusyIndicator shown left of session name when busy
+- Updated ShelfCard.svelte: added isBusy derived, BusyIndicator replaces color-dot when busy
+- Updated Deck.svelte: added getProcessState() helper, passes processState to DeckPane
+- Files changed: apps/desktop/src/lib/BusyIndicator.svelte (new), DeckPane.svelte, ShelfCard.svelte, Deck.svelte
+- **Learnings for future iterations:**
+  - BusyIndicator replaces the color-dot in ShelfCard when busy (avoids double indicator)
+  - DeckPane processState prop is optional with fallback to Exited state
+---
