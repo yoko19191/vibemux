@@ -7,6 +7,7 @@
   import NewSessionPanel from "./lib/NewSessionPanel.svelte";
   import SettingsPanel from "./lib/SettingsPanel.svelte";
   import SessionSearch from "./lib/SessionSearch.svelte";
+  import HelpOverlay from "./lib/HelpOverlay.svelte";
   import { onReplayStart, onReplayChunk, onReplayEnd, cancelReplay } from "./lib/terminalReplay";
   import type { MuxEvent, SessionSnapshot } from "./lib/types";
 
@@ -17,6 +18,7 @@
   let showNewSession = $state(false);
   let showSettings = $state(false);
   let showSearch = $state(false);
+  let showHelp = $state(false);
   let homeCwd = $state("/");
   let terminalApis: Map<string, { writeOutput: (data: string) => void }> = new Map();
   let restoringSessionIds: Set<string> = $state(new Set());
@@ -228,6 +230,11 @@
         navMode = false;
         e.preventDefault();
         break;
+      case "?":
+        showHelp = true;
+        navMode = false;
+        e.preventDefault();
+        break;
     }
   }
 
@@ -363,6 +370,13 @@
       sessions={sessions}
       onSelect={handleSearchSelect}
       onClose={() => (showSearch = false)}
+    />
+  {/if}
+
+  {#if showHelp}
+    <HelpOverlay
+      prefixKey={isMac ? "Cmd+Space" : "Ctrl+Space"}
+      onClose={() => (showHelp = false)}
     />
   {/if}
 
