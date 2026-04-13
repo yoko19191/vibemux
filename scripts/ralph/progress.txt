@@ -299,3 +299,18 @@
   - config_update uses JSON merge (not TOML merge) — serialize to JSON, merge, deserialize back
   - ConfigState uses std::sync::Mutex (not tokio) since config_get/config_update are sync commands
 ---
+
+## 2026-04-13 - US-024
+- Created SettingsPanel.svelte with Terminal/Theme/Layout tabs
+- Terminal tab: font_family, font_size, line_height inputs
+- Theme tab: color pickers + text inputs for all 20 theme colors
+- Layout tab: focused_pane_width, animation_ms, max_hot_sessions
+- Each change calls config_update immediately (no save button needed)
+- Settings ⚙ button in bottom-right corner, shelf-offset when shelf visible
+- App.svelte: added showSettings state, SettingsPanel import, settings button
+- Files changed: src/lib/SettingsPanel.svelte (new), src/App.svelte
+- **Learnings for future iterations:**
+  - Color inputs: type="color" only accepts 6-char hex — use .slice(0,7) to strip alpha
+  - onchange (not oninput) for text/number inputs to avoid firing on every keystroke
+  - oninput for color picker to get real-time preview
+---

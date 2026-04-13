@@ -5,6 +5,7 @@
   import Deck from "./lib/Deck.svelte";
   import Shelf from "./lib/Shelf.svelte";
   import NewSessionPanel from "./lib/NewSessionPanel.svelte";
+  import SettingsPanel from "./lib/SettingsPanel.svelte";
   import { onReplayStart, onReplayChunk, onReplayEnd, cancelReplay } from "./lib/terminalReplay";
   import type { MuxEvent, SessionSnapshot } from "./lib/types";
 
@@ -13,6 +14,7 @@
   let error: string | null = $state(null);
   let navMode = $state(false);
   let showNewSession = $state(false);
+  let showSettings = $state(false);
   let homeCwd = $state("/");
   let terminalApis: Map<string, { writeOutput: (data: string) => void }> = new Map();
   let restoringSessionIds: Set<string> = $state(new Set());
@@ -323,6 +325,12 @@
       onCancel={() => (showNewSession = false)}
     />
   {/if}
+
+  {#if showSettings}
+    <SettingsPanel onClose={() => (showSettings = false)} />
+  {/if}
+
+  <button class="settings-btn" class:shelf-offset={warmSessions.length > 0} onclick={() => (showSettings = true)}>⚙</button>
 </main>
 
 <style>

@@ -433,8 +433,8 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 24,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "SettingsPanel.svelte with Terminal/Theme/Layout tabs. Changes call config_update immediately. Settings button (⚙) in bottom-right corner. Shelf offset applied when shelf visible."
     },
     {
       "id": "US-025",
