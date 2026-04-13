@@ -310,6 +310,34 @@ pub fn config_get_error(error_state: State<'_, ConfigErrorState>) -> Option<Stri
     error_state.lock().ok().and_then(|e| e.clone())
 }
 
+#[tauri::command]
+pub fn detect_shells() -> Vec<String> {
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        let shells_file = std::fs::read_to_string("/etc/shells").unwrap_or_default();
+        shells_file
+            .lines()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .filter(|l| std::path::Path::new(l).exists())
+            .map(|l| l.to_string())
+            .collect()
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let candidates = [
+            r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+            r"C:\Program Files\PowerShell\7\pwsh.exe",
+            r"C:\Windows\System32\cmd.exe",
+        ];
+        candidates
+            .iter()
+            .filter(|p| std::path::Path::new(p).exists())
+            .map(|p| p.to_string())
+            .collect()
+    }
+}
+
 fn merge_json(base: &mut serde_json::Value, update: &serde_json::Value) {
     if let (serde_json::Value::Object(base_map), serde_json::Value::Object(update_map)) =
         (base, update)

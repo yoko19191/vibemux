@@ -44,6 +44,7 @@ pub fn run() {
             commands::config_get_error,
             commands::open_url,
             commands::session_set_title,
+            commands::detect_shells,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

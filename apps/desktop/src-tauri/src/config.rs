@@ -138,6 +138,7 @@ pub struct UserConfig {
     pub layout: LayoutConfig,
     pub shell: ShellConfig,
     pub keys: KeysConfig,
+    pub onboarding_completed: bool,
 }
 
 pub type ConfigState = Arc<Mutex<UserConfig>>;
