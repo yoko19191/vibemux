@@ -8,6 +8,7 @@
   import SettingsPanel from "./lib/SettingsPanel.svelte";
   import SessionSearch from "./lib/SessionSearch.svelte";
   import HelpOverlay from "./lib/HelpOverlay.svelte";
+  import Titlebar from "./lib/Titlebar.svelte";
   import { onReplayStart, onReplayChunk, onReplayEnd, cancelReplay } from "./lib/terminalReplay";
   import type { MuxEvent, SessionSnapshot } from "./lib/types";
   import { parsePrefixKey, matchesPrefixKey, formatPrefixKey } from "./lib/keymap";
@@ -346,31 +347,40 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <main class:has-shelf={warmSessions.length > 0}>
-  {#if configError}
-    <div class="config-error-banner">
-      <span class="config-error-icon">⚠</span>
-      <span class="config-error-msg">Config reset to defaults: {configError}</span>
-      <button class="config-error-dismiss" onclick={() => (configError = null)}>✕</button>
-    </div>
-  {/if}
+  <Titlebar
+    prefixKey={prefixKeyDisplay}
+    onNewSession={() => { showNewSession = true; navMode = false; }}
+    onSearch={() => { showSearch = true; navMode = false; }}
+    onSettings={() => (showSettings = true)}
+  />
 
-  {#if error}
-    <div class="error">{error}</div>
-  {:else if hotSessions.length > 0}
-    <Deck
-      sessions={hotSessions}
-      {focusedSessionId}
-      {renamingSessionId}
-      onTerminalReady={handleTerminalReady}
-      onFocusSession={handleFocusSession}
-      onRenameConfirm={handleRenameConfirm}
-      onRenameCancel={handleRenameCancel}
-    />
-  {:else if sessions.length > 0}
-    <div class="loading">All sessions parked</div>
-  {:else}
-    <div class="loading">Starting session...</div>
-  {/if}
+  <div class="content-area" class:has-shelf={warmSessions.length > 0}>
+    {#if configError}
+      <div class="config-error-banner">
+        <span class="config-error-icon">⚠</span>
+        <span class="config-error-msg">Config reset to defaults: {configError}</span>
+        <button class="config-error-dismiss" onclick={() => (configError = null)}>✕</button>
+      </div>
+    {/if}
+
+    {#if error}
+      <div class="error">{error}</div>
+    {:else if hotSessions.length > 0}
+      <Deck
+        sessions={hotSessions}
+        {focusedSessionId}
+        {renamingSessionId}
+        onTerminalReady={handleTerminalReady}
+        onFocusSession={handleFocusSession}
+        onRenameConfirm={handleRenameConfirm}
+        onRenameCancel={handleRenameCancel}
+      />
+    {:else if sessions.length > 0}
+      <div class="loading">All sessions parked</div>
+    {:else}
+      <div class="loading">Starting session...</div>
+    {/if}
+  </div>
 
   <Shelf sessions={warmSessions} onRecall={recallSession} selectedIdx={selectedShelfIdx} />
 
@@ -407,8 +417,6 @@
       onClose={() => (showHelp = false)}
     />
   {/if}
-
-  <button class="settings-btn" class:shelf-offset={warmSessions.length > 0} onclick={() => (showSettings = true)}>⚙</button>
 </main>
 
 <style>
@@ -424,6 +432,19 @@
     height: 100vh;
     overflow: hidden;
     position: relative;
+  }
+
+  .content-area {
+    position: absolute;
+    top: 36px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+  }
+
+  .content-area.has-shelf {
+    bottom: 62px;
   }
 
   .error {
@@ -484,7 +505,7 @@
 
   .config-error-banner {
     position: fixed;
-    top: 0;
+    top: 36px;
     left: 0;
     right: 0;
     display: flex;
