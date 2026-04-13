@@ -198,3 +198,18 @@
   - dragover/dragleave on the drop target manage visual indicator state (dragOver $state)
   - reorder_hot_sessions validates length matches to prevent partial reorders
 ---
+
+## 2026-04-13 - US-017
+- Added MuxEvent::SessionParked variant to session_manager.rs
+- Added park_session() to SessionManager: moves session from hot_session_ids to warm_session_ids, sets thermal_state to Warm, shifts focus to next hot session, emits SessionParked event
+- Added session_park Tauri command in commands.rs
+- Registered session_park in lib.rs generate_handler!
+- Added FrontendEvent::SessionParked variant in events.rs, wired in convert_event()
+- Added sessionParked type to MuxEvent union in types.ts
+- App.svelte: handles sessionParked event (updates thermalState in local sessions, shifts focus), adds parkCurrentSession() function, B key in Navigation Mode triggers park, nav hint updated
+- Files changed: src-tauri/src/session_manager.rs, src-tauri/src/commands.rs, src-tauri/src/lib.rs, src-tauri/src/events.rs, src/lib/types.ts, src/App.svelte
+- **Learnings for future iterations:**
+  - Park does NOT kill the PTY — only moves session between hot/warm lists and updates thermal_state
+  - Frontend must filter Deck to hot sessions only when park is implemented (warm sessions go to Shelf in US-018)
+  - MuxEvent variants need matching FrontendEvent variants and convert_event() arms
+---

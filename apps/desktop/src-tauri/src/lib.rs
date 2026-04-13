@@ -26,6 +26,7 @@ pub fn run() {
             commands::session_focus,
             commands::session_close,
             commands::session_kill,
+            commands::session_park,
             commands::session_reorder,
             commands::workspace_get_snapshot,
         ])

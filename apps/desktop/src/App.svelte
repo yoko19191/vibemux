@@ -28,6 +28,15 @@
         if (focusedSessionId === muxEvent.sessionId) {
           focusedSessionId = sessions[0]?.id ?? null;
         }
+      } else if (muxEvent.type === "sessionParked") {
+        // Move session from hot to warm in local state
+        sessions = sessions.map((s) =>
+          s.id === muxEvent.sessionId ? { ...s, thermalState: "Warm" as const } : s
+        );
+        if (focusedSessionId === muxEvent.sessionId) {
+          const hotSessions = sessions.filter((s) => s.thermalState === "Hot");
+          focusedSessionId = hotSessions[0]?.id ?? null;
+        }
       }
     });
 
@@ -124,6 +133,12 @@
         navMode = false;
         e.preventDefault();
         break;
+      case "b":
+      case "B":
+        parkCurrentSession();
+        navMode = false;
+        e.preventDefault();
+        break;
     }
   }
 
@@ -165,6 +180,15 @@
     }
   }
 
+  async function parkCurrentSession() {
+    if (!focusedSessionId) return;
+    try {
+      await invoke("session_park", { sessionId: focusedSessionId });
+    } catch (e) {
+      console.error("Failed to park session:", e);
+    }
+  }
+
   function handleSessionCreated(snapshot: SessionSnapshot) {
     sessions = [...sessions, snapshot];
     focusedSessionId = snapshot.id;
@@ -191,7 +215,7 @@
   {#if navMode}
     <div class="nav-indicator">
       <span class="nav-badge">NAV</span>
-      <span class="nav-hint">h/l: switch · n: new · x: close · X: kill · esc: cancel</span>
+      <span class="nav-hint">h/l: switch · n: new · b: park · x: close · X: kill · esc: cancel</span>
     </div>
   {/if}
 

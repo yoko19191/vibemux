@@ -50,4 +50,5 @@ export type MuxEvent =
   | { type: "sessionCreated"; session: SessionSnapshot }
   | { type: "sessionOutput"; sessionId: string; data: string; seq: number }
   | { type: "sessionExited"; sessionId: string; exitCode: number | null }
-  | { type: "sessionUpdated"; sessionId: string };
+  | { type: "sessionUpdated"; sessionId: string }
+  | { type: "sessionParked"; sessionId: string };

@@ -34,6 +34,9 @@ pub enum MuxEvent {
         session_id: Uuid,
         process_state: ProcessState,
     },
+    SessionParked {
+        session_id: Uuid,
+    },
 }
 
 struct ManagedSession {
@@ -227,6 +230,34 @@ impl SessionManager {
                 .or(self.workspace.warm_session_ids.first())
                 .copied();
         }
+    }
+
+    pub fn park_session(&mut self, session_id: Uuid) -> Result<(), String> {
+        let managed = self
+            .sessions
+            .get_mut(&session_id)
+            .ok_or_else(|| format!("session {} not found", session_id))?;
+
+        if managed.session.thermal_state != ThermalState::Hot {
+            return Err(format!("session {} is not a hot session", session_id));
+        }
+
+        managed.session.thermal_state = ThermalState::Warm;
+        managed.session.updated_at = Utc::now();
+
+        self.workspace.hot_session_ids.retain(|id| *id != session_id);
+        self.workspace.warm_session_ids.push(session_id);
+
+        if self.workspace.focused_session_id == Some(session_id) {
+            self.workspace.focused_session_id = self
+                .workspace
+                .hot_session_ids
+                .first()
+                .copied();
+        }
+
+        let _ = self.event_tx.send(MuxEvent::SessionParked { session_id });
+        Ok(())
     }
 
     pub fn reorder_hot_sessions(&mut self, session_ids: Vec<Uuid>) -> Result<(), String> {

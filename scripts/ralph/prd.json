@@ -311,8 +311,8 @@
         "Typecheck passes"
       ],
       "priority": 17,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "session_park Tauri command moves session from hot to warm. MuxEvent::SessionParked emitted. Frontend handles sessionParked event, updates thermalState, shifts focus. Navigation Mode B key triggers park."
     },
     {
       "id": "US-018",

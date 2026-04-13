@@ -30,6 +30,10 @@ pub enum FrontendEvent {
     SessionUpdated {
         session_id: String,
     },
+    #[serde(rename_all = "camelCase")]
+    SessionParked {
+        session_id: String,
+    },
 }
 
 const BATCH_INTERVAL_MS: u64 = 12;
@@ -86,6 +90,9 @@ fn convert_event(event: MuxEvent) -> FrontendEvent {
                 exit_code,
             }
         }
+        MuxEvent::SessionParked { session_id } => FrontendEvent::SessionParked {
+            session_id: session_id.to_string(),
+        },
     }
 }
 
