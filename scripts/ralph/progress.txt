@@ -10,8 +10,20 @@
 - MuxEvents emitted from Rust via `events.rs` event bridge, frontend listens on `mux-event` channel
 - Existing context menu pattern in TerminalPane.svelte: inline overlay + positioned menu div
 - DeckPane has drag-handle (3px colored bar) + pane-header (22px with session name) + terminal-container
-- Config prefix key currently hardcoded in App.svelte as `e.code === "Space" && (isMac ? e.metaKey : e.ctrlKey)`
-- KeysConfig in config.rs has `prefix: String` field, default "cmd+space"
+- Config prefix key is now config-driven via `keymap.ts` parsePrefixKey/matchesPrefixKey/formatPrefixKey
+- KeysConfig in config.rs has `prefix: String` field, default now "ctrl+b"
 - Settings button is a floating `<button class="settings-btn">` in App.svelte bottom-right
+- `config_get` returns the full UserConfig as JSON — access nested fields like `cfg.keys.prefix`
 
+---
+
+## 2026-04-13 - US-031
+- Changed default prefix key from "cmd+space" to "ctrl+b" in config.rs KeysConfig::default()
+- Created `apps/desktop/src/lib/keymap.ts` with parsePrefixKey, matchesPrefixKey, formatPrefixKey
+- Updated App.svelte: loads keys.prefix from config_get on mount, uses matchesPrefixKey for detection, shows prefixKeyDisplay in nav indicator and HelpOverlay
+- Files changed: config.rs, App.svelte, src/lib/keymap.ts (new)
+- **Learnings for future iterations:**
+  - `config_get` returns full UserConfig JSON — access as `cfg.keys.prefix`
+  - Svelte 5 $derived works well for computed values from $state
+  - keymap.ts is now the single source of truth for prefix key parsing/display
 ---
