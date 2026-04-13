@@ -9,6 +9,7 @@
   import SessionSearch from "./lib/SessionSearch.svelte";
   import HelpOverlay from "./lib/HelpOverlay.svelte";
   import Titlebar from "./lib/Titlebar.svelte";
+  import Onboarding from "./lib/Onboarding.svelte";
   import { onReplayStart, onReplayChunk, onReplayEnd, cancelReplay } from "./lib/terminalReplay";
   import type { MuxEvent, SessionSnapshot } from "./lib/types";
   import { parsePrefixKey, matchesPrefixKey, formatPrefixKey } from "./lib/keymap";
@@ -32,6 +33,7 @@
   let prefixKeyConfig = $state("ctrl+b");
   let prefixKeyMatcher: PrefixKeyMatcher = $derived(parsePrefixKey(prefixKeyConfig));
   let prefixKeyDisplay = $derived(formatPrefixKey(prefixKeyConfig));
+  let showOnboarding = $state(false);
 
   let hotSessions = $derived(sessions.filter((s) => s.thermalState === "Hot"));
   let warmSessions = $derived(sessions.filter((s) => s.thermalState === "Warm"));
@@ -107,27 +109,21 @@
       console.log("[vibemux] config_get_error done:", cfgErr);
       if (cfgErr) configError = cfgErr;
 
-      // Load prefix key from config
+      // Load prefix key from config and check onboarding
       try {
-        const cfg = await invoke<{ keys?: { prefix?: string } }>("config_get");
+        const cfg = await invoke<{ keys?: { prefix?: string }; onboarding_completed?: boolean }>("config_get");
         if (cfg?.keys?.prefix) {
           prefixKeyConfig = cfg.keys.prefix;
+        }
+        if (!cfg?.onboarding_completed) {
+          showOnboarding = true;
+          return; // don't create session yet — onboarding will trigger it
         }
       } catch {
         // keep default
       }
 
-      console.log("[vibemux] calling session_create...");
-      const snapshot: SessionSnapshot = await invoke("session_create", {
-        payload: {
-          name: "shell",
-          cwd: homeCwd,
-          commandType: "shell",
-        },
-      });
-      console.log("[vibemux] session_create returned:", JSON.stringify(snapshot));
-      sessions = [snapshot];
-      focusedSessionId = snapshot.id;
+      await createInitialSession();
     } catch (e) {
       console.error("[vibemux] session_create failed:", e);
       error = `Failed to create session: ${e}`;
@@ -145,6 +141,31 @@
     } catch {
       return "/";
     }
+  }
+
+  async function createInitialSession() {
+    try {
+      console.log("[vibemux] calling session_create...");
+      const snapshot: SessionSnapshot = await invoke("session_create", {
+        payload: {
+          name: "shell",
+          cwd: homeCwd,
+          commandType: "shell",
+        },
+      });
+      console.log("[vibemux] session_create returned:", JSON.stringify(snapshot));
+      sessions = [snapshot];
+      focusedSessionId = snapshot.id;
+    } catch (e) {
+      console.error("[vibemux] session_create failed:", e);
+      error = `Failed to create session: ${e}`;
+    }
+  }
+
+  async function handleOnboardingComplete(prefixKey: string) {
+    showOnboarding = false;
+    prefixKeyConfig = prefixKey;
+    await createInitialSession();
   }
 
   function handleTerminalReady(sessionId: string, api: { writeOutput: (data: string) => void }) {
@@ -416,6 +437,10 @@
       prefixKey={prefixKeyDisplay}
       onClose={() => (showHelp = false)}
     />
+  {/if}
+
+  {#if showOnboarding}
+    <Onboarding onComplete={handleOnboardingComplete} />
   {/if}
 </main>
 
