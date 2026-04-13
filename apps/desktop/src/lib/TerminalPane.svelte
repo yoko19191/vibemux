@@ -7,9 +7,10 @@
 
   interface Props {
     sessionId: string;
+    onReady?: (api: { writeOutput: (data: string) => void }) => void;
   }
 
-  let { sessionId }: Props = $props();
+  let { sessionId, onReady }: Props = $props();
 
   let containerEl: HTMLDivElement;
   let terminal: Terminal | null = null;
@@ -67,6 +68,11 @@
       }
     });
     resizeObserver.observe(containerEl);
+
+    // Notify parent that terminal is ready
+    onReady?.({
+      writeOutput: (data: string) => terminal?.write(data),
+    });
   });
 
   onDestroy(() => {
@@ -75,10 +81,6 @@
     terminal = null;
     fitAddon = null;
   });
-
-  export function writeOutput(data: string) {
-    terminal?.write(data);
-  }
 </script>
 
 <div class="terminal-pane" bind:this={containerEl}></div>
