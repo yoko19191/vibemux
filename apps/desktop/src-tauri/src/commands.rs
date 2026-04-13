@@ -175,3 +175,16 @@ pub async fn session_kill(
     let mut manager = state.lock().await;
     manager.kill_session(uuid)
 }
+
+#[tauri::command]
+pub async fn session_reorder(
+    state: State<'_, AppState>,
+    session_ids: Vec<String>,
+) -> Result<(), String> {
+    let uuids: Vec<Uuid> = session_ids
+        .iter()
+        .map(|id| Uuid::parse_str(id).map_err(|_| format!("invalid session id: '{}'", id)))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut manager = state.lock().await;
+    manager.reorder_hot_sessions(uuids)
+}

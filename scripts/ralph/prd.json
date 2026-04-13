@@ -16,8 +16,8 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "xterm packages are now scoped under @xterm/ (e.g. @xterm/xterm, @xterm/addon-fit, @xterm/addon-webgl). Tauri 2 icons must be RGBA PNGs."
     },
     {
       "id": "US-002",
@@ -35,8 +35,8 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Models in src-tauri/src/models.rs. Uses uuid and chrono crates."
     },
     {
       "id": "US-003",
@@ -53,8 +53,8 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Ring buffer in src-tauri/src/ring_buffer.rs. 7 unit tests covering push, eviction, range queries."
     },
     {
       "id": "US-004",
@@ -73,8 +73,8 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "PTY host in src-tauri/src/pty_host.rs. Uses portable-pty, tokio, libc for signal handling."
     },
     {
       "id": "US-005",
@@ -92,8 +92,8 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "SessionManager in src-tauri/src/session_manager.rs. Routes PTY output to ring buffer and emits MuxEvents."
     },
     {
       "id": "US-006",
@@ -110,8 +110,8 @@
         "Typecheck passes"
       ],
       "priority": 6,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Tauri commands in src-tauri/src/commands.rs. AppState = Arc<Mutex<SessionManager>>."
     },
     {
       "id": "US-007",
@@ -128,8 +128,8 @@
         "Typecheck passes"
       ],
       "priority": 7,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Event bridge in src-tauri/src/events.rs. Batches at 12ms intervals. Frontend types in src/lib/types.ts."
     },
     {
       "id": "US-008",
@@ -148,8 +148,8 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 8,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "TerminalPane.svelte in src/lib/. Uses @xterm/xterm 6.0, WebGL addon with canvas fallback, fit addon, ResizeObserver."
     },
     {
       "id": "US-009",
@@ -166,8 +166,8 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 9,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "App.svelte auto-creates shell session on mount, listens for mux-event, routes output to TerminalPane via onReady callback pattern."
     },
     {
       "id": "US-010",
@@ -184,8 +184,8 @@
         "Typecheck passes"
       ],
       "priority": 10,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "session_focus, session_close, session_kill commands added. Sessions removed from workspace on close/kill."
     },
     {
       "id": "US-011",
@@ -203,8 +203,8 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 11,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Deck.svelte, DeckPane.svelte, deckLayout.ts in src/lib/. App.svelte updated to use Deck with multi-session support."
     },
     {
       "id": "US-012",
@@ -221,8 +221,8 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 12,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "NewSessionPanel.svelte in src/lib/. Modal with name, cwd, command type fields. Uses $derived.by for defaultCwd prop."
     },
     {
       "id": "US-013",
@@ -241,8 +241,8 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 13,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Navigation Mode in App.svelte. Cmd+Space (Mac) / Ctrl+Space toggle. h/l/n/x/X keybindings. NAV indicator bar."
     },
     {
       "id": "US-014",
@@ -258,8 +258,8 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 14,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Already implemented in US-011. DeckPane onclick → Deck onFocusSession → App handleFocusSession → session_focus command."
     },
     {
       "id": "US-015",
@@ -275,8 +275,8 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 15,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "CSS transition on DeckPane: width 150ms ease-out, opacity 150ms ease-out."
     },
     {
       "id": "US-016",
@@ -292,8 +292,8 @@
         "Verify in browser using dev-browser skill"
       ],
       "priority": 16,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "DeckPane has drag handle (top colored bar), drag-over outline indicator, ondragstart/ondragover/ondrop wired in Deck.svelte. session_reorder Tauri command updates hot_session_ids order in workspace."
     },
     {
       "id": "US-017",

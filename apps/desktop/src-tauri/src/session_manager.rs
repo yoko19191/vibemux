@@ -229,6 +229,20 @@ impl SessionManager {
         }
     }
 
+    pub fn reorder_hot_sessions(&mut self, session_ids: Vec<Uuid>) -> Result<(), String> {
+        // Validate all provided IDs are in hot_session_ids
+        for id in &session_ids {
+            if !self.workspace.hot_session_ids.contains(id) {
+                return Err(format!("session {} is not a hot session", id));
+            }
+        }
+        if session_ids.len() != self.workspace.hot_session_ids.len() {
+            return Err("reorder must include all hot session IDs".to_string());
+        }
+        self.workspace.hot_session_ids = session_ids;
+        Ok(())
+    }
+
     async fn route_output(
         session_id: Uuid,
         mut output_rx: mpsc::UnboundedReceiver<Vec<u8>>,
