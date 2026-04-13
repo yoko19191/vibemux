@@ -2,20 +2,21 @@
   import { onMount, onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
-  import TerminalPane from "./lib/TerminalPane.svelte";
-  import type { MuxEvent, SessionSnapshot } from "./lib/types";
+  import Deck from "./lib/Deck.svelte";
+  import type { MuxEvent, SessionSnapshot, WorkspaceSnapshot } from "./lib/types";
 
-  let sessionId: string | null = $state(null);
+  let sessions: SessionSnapshot[] = $state([]);
+  let focusedSessionId: string | null = $state(null);
   let error: string | null = $state(null);
-  let terminalApi: { writeOutput: (data: string) => void } | null = null;
+  let terminalApis: Map<string, { writeOutput: (data: string) => void }> = new Map();
   let unlisten: (() => void) | null = null;
 
   onMount(async () => {
     // Listen for mux events
     unlisten = await listen<MuxEvent>("mux-event", (event) => {
       const muxEvent = event.payload;
-      if (muxEvent.type === "sessionOutput" && muxEvent.sessionId === sessionId) {
-        terminalApi?.writeOutput(muxEvent.data);
+      if (muxEvent.type === "sessionOutput") {
+        terminalApis.get(muxEvent.sessionId)?.writeOutput(muxEvent.data);
       }
     });
 
@@ -29,7 +30,8 @@
           commandType: "shell",
         },
       });
-      sessionId = snapshot.id;
+      sessions = [snapshot];
+      focusedSessionId = snapshot.id;
     } catch (e) {
       error = `Failed to create session: ${e}`;
     }
@@ -48,16 +50,30 @@
     }
   }
 
-  function handleTerminalReady(api: { writeOutput: (data: string) => void }) {
-    terminalApi = api;
+  function handleTerminalReady(sessionId: string, api: { writeOutput: (data: string) => void }) {
+    terminalApis.set(sessionId, api);
+  }
+
+  async function handleFocusSession(sessionId: string) {
+    try {
+      await invoke("session_focus", { sessionId });
+      focusedSessionId = sessionId;
+    } catch (e) {
+      console.error("Failed to focus session:", e);
+    }
   }
 </script>
 
 <main>
   {#if error}
     <div class="error">{error}</div>
-  {:else if sessionId}
-    <TerminalPane {sessionId} onReady={handleTerminalReady} />
+  {:else if sessions.length > 0}
+    <Deck
+      {sessions}
+      {focusedSessionId}
+      onTerminalReady={handleTerminalReady}
+      onFocusSession={handleFocusSession}
+    />
   {:else}
     <div class="loading">Starting session...</div>
   {/if}
