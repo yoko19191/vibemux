@@ -1,8 +1,9 @@
 <script lang="ts">
   import TerminalPane from "./TerminalPane.svelte";
   import ContextMenu from "./ContextMenu.svelte";
+  import BusyIndicator from "./BusyIndicator.svelte";
   import type { ContextMenuItem } from "./ContextMenu.svelte";
-  import type { ColorToken } from "./types";
+  import type { ColorToken, ProcessState } from "./types";
   import { invoke } from "@tauri-apps/api/core";
 
   interface Props {
@@ -11,6 +12,7 @@
     sessionCwd?: string;
     terminalTitle?: string;
     color: ColorToken;
+    processState?: ProcessState;
     isFocused: boolean;
     width: number;
     isRenaming?: boolean;
@@ -26,7 +28,7 @@
   }
 
   let {
-    sessionId, sessionName, sessionCwd = "", terminalTitle = "", color, isFocused, width,
+    sessionId, sessionName, sessionCwd = "", terminalTitle = "", color, processState, isFocused, width,
     isRenaming = false,
     onReady, onclick, ondragstart, ondragover, ondrop,
     onRenameConfirm, onRenameCancel, onPark, onClose,
@@ -58,6 +60,7 @@
     { token: "Pink", color: "#ec4899" },
   ];
 
+  let isBusy = $derived(processState?.type === "Running");
   let borderColor = $derived(colorMap[color] ?? "#666");
   let borderStyle = $derived(isFocused
     ? `2px solid ${borderColor}`
@@ -183,6 +186,9 @@
         onclick={(e) => e.stopPropagation()}
       />
     {:else}
+      {#if isBusy}
+        <BusyIndicator color={borderColor} />
+      {/if}
       <span class="session-name">{displayName}</span>
       {#if shortCwd}
         <span class="session-cwd">{shortCwd}</span>

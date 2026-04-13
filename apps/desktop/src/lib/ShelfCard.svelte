@@ -1,5 +1,6 @@
 <script lang="ts">
   import ContextMenu from "./ContextMenu.svelte";
+  import BusyIndicator from "./BusyIndicator.svelte";
   import type { ContextMenuItem } from "./ContextMenu.svelte";
   import type { SessionSnapshot, ColorToken, AttentionState } from "./types";
 
@@ -60,6 +61,7 @@
   let dotColor = $derived(colorMap[session.color] ?? "#666");
   let badge = $derived(attentionBadge(session.attentionState));
   let shortCwd = $derived(session.cwd.replace(/^.*\/([^/]+)$/, "$1") || session.cwd);
+  let isBusy = $derived(session.processState.type === "Running");
 
   let contextMenu: { x: number; y: number } | null = $state(null);
   let renamingInline = $state(false);
@@ -126,7 +128,11 @@
       onclick={(e) => e.stopPropagation()}
     />
   {:else}
-    <span class="color-dot" style="background: {dotColor};"></span>
+    {#if isBusy}
+      <BusyIndicator color={dotColor} />
+    {:else}
+      <span class="color-dot" style="background: {dotColor};"></span>
+    {/if}
     <span class="session-name">{session.customName ?? session.name}</span>
     {#if badge}
       <span class="badge" style="color: {badge.color};">{badge.label}</span>

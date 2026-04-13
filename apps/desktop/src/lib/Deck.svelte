@@ -3,7 +3,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import DeckPane from "./DeckPane.svelte";
   import { calculateDeckLayout } from "./deckLayout";
-  import type { SessionSnapshot, ColorToken } from "./types";
+  import type { SessionSnapshot, ColorToken, ProcessState } from "./types";
 
   interface Props {
     sessions: SessionSnapshot[];
@@ -53,6 +53,10 @@
 
   function getTerminalTitle(sessionId: string): string {
     return sessions.find((s) => s.id === sessionId)?.terminalTitle ?? "";
+  }
+
+  function getProcessState(sessionId: string): ProcessState {
+    return sessions.find((s) => s.id === sessionId)?.processState ?? { type: "Exited", code: null };
   }
 
   function handleDragStart(sessionId: string, e: DragEvent) {
@@ -122,6 +126,7 @@
       sessionCwd={getCwd(layout.sessionId)}
       terminalTitle={getTerminalTitle(layout.sessionId)}
       color={getColor(layout.sessionId)}
+      processState={getProcessState(layout.sessionId)}
       isFocused={layout.isFocused}
       width={layout.width}
       isRenaming={renamingSessionId === layout.sessionId}
