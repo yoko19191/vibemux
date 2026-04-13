@@ -1,7 +1,7 @@
 {
   "project": "Vibemux",
   "branchName": "ralph/ux-improvements",
-  "description": "Vibemux UX improvements: fix prefix key conflict (Ctrl+B default), add top titlebar with GUI buttons, first-launch onboarding wizard, and context menus/buttons on Deck panes and Shelf cards for full mouse operability.",
+  "description": "Vibemux UX improvements: prefix key, titlebar, onboarding, context menus, plus interface polish — shelf height, rename persistence, text clipping, settings enhancements, theme presets, session borders, window title, 2.5D visuals, and busy indicators.",
   "userStories": [
     {
       "id": "US-031",
@@ -246,6 +246,181 @@
       ],
       "priority": 13,
       "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-044",
+      "title": "Shelf height reduced to half",
+      "description": "As a user, I want the Shelf area height reduced to half its current size so that the terminal content area has more vertical space.",
+      "acceptanceCriteria": [
+        "Find Shelf current height definition (CSS variable or fixed value) and reduce it by half",
+        "ShelfCard internal layout adapts to new height (text and icons do not overflow)",
+        "Deck area height automatically fills remaining space (flex layout, no hardcoded values)",
+        "Shelf collapsed/expanded states both have correct height",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 14,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-045",
+      "title": "Fix Rename being overwritten by PWD updates",
+      "description": "As a user, I want my custom session name to persist after renaming, so that PWD changes do not overwrite it.",
+      "acceptanceCriteria": [
+        "Session struct in models.rs gets new field: custom_name: Option<String>",
+        "session_rename command in session_manager.rs writes to custom_name and also sets name",
+        "PWD update logic (ProcessState change) only updates name when custom_name is None",
+        "SessionSnapshot in commands.rs exposes custom_name: Option<String> to frontend",
+        "DeckPane title bar: primary title shows custom_name (if set), otherwise name; subtitle shows current cwd",
+        "ShelfCard: primary title shows custom_name (if set), otherwise name",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 15,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-046",
+      "title": "Multi-session horizontal layout title text clip instead of compress",
+      "description": "As a user, I want pane title text to clip (not compress/shrink) when multiple sessions are laid out horizontally.",
+      "acceptanceCriteria": [
+        "DeckPane title bar session name element uses overflow: hidden; white-space: nowrap; text-overflow: clip",
+        "Font size remains constant at any pane width — no font-size scaling",
+        "Title bar height is fixed and does not change with content",
+        "Verified with 2, 3, and 4 sessions horizontally — text does not deform",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-047",
+      "title": "Add Prefix Key setting to Settings panel",
+      "description": "As a user, I want to change the Prefix Key from the Settings panel without editing config files manually.",
+      "acceptanceCriteria": [
+        "Settings panel Keys or General tab has a 'Navigation Prefix Key' config item",
+        "Dropdown with options: Ctrl+B, Ctrl+Space, Ctrl+`, Ctrl+A, Cmd+Space (macOS)",
+        "Text input below dropdown for custom key combo (e.g. ctrl+shift+x)",
+        "On select or input blur, calls config_update to write keys.prefix",
+        "App.svelte immediately updates prefix key matching logic after change (no restart needed)",
+        "Current value read from config_get and displayed",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-048",
+      "title": "Add list_monospace_fonts Tauri command and font dropdown in Settings",
+      "description": "As a user, I want a font dropdown in Settings listing system monospace fonts so I can easily pick a terminal font.",
+      "acceptanceCriteria": [
+        "New Rust Tauri command list_monospace_fonts returns Vec<String> of system monospace fonts",
+        "macOS: uses fc-list :spacing=mono or CoreText API; falls back to preset list [monospace, Menlo, Monaco, Courier New, JetBrains Mono, Fira Code, SF Mono] on failure",
+        "list_monospace_fonts registered in lib.rs invoke_handler",
+        "Settings font config item changed from text input to <select> dropdown populated by system font list",
+        "Current font value highlighted in dropdown",
+        "Text input below dropdown for manual font name entry",
+        "On select, calls config_update to write terminal.font_family; xterm instances update font in real-time",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-049",
+      "title": "Add preset theme cards to Settings Theme tab",
+      "description": "As a user, I want preset theme options in Settings so I can one-click switch terminal themes.",
+      "acceptanceCriteria": [
+        "Settings Theme tab top section shows 8 preset theme cards in a grid",
+        "Each card shows: theme name + 3 color swatches (background, foreground, accent)",
+        "Preset themes: Vibemux Dark (current default), Solarized Dark, Monokai, Nord, Dracula, One Dark, Gruvbox Dark, Tokyo Night",
+        "Each preset includes full ANSI 16 color definitions (black/red/green/yellow/blue/magenta/cyan/white + 8 bright variants) plus background/foreground/cursor/selection",
+        "Clicking a preset card writes all color values to config via config_update and applies immediately",
+        "Selected preset card has highlighted border",
+        "Existing custom color inputs remain below the presets section",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-050",
+      "title": "Add theme-colored border around each DeckPane",
+      "description": "As a user, I want each session pane wrapped in a thin theme-colored border so I can visually distinguish sessions in multi-pane layout.",
+      "acceptanceCriteria": [
+        "DeckPane outer container has 1px solid border using session color_token color (matches drag handle color)",
+        "Border radius consistent with existing DeckPane radius (or 4px)",
+        "Focused pane border is brighter/thicker (2px or higher brightness); non-focused pane border is semi-transparent (opacity 0.5 or lower saturation)",
+        "Single session also shows border (consistency)",
+        "Border does not affect terminal content usable area (box-sizing: border-box)",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-051",
+      "title": "Dynamic window title showing focused hot session",
+      "description": "As a user, I want the window title to show the current focused session name and status instead of a static 'Vibemux'.",
+      "acceptanceCriteria": [
+        "Window title format: '{session_name} — Vibemux' where session_name is custom_name if set, otherwise name",
+        "When focused session is Busy (has active process), title format: '⚙ {session_name} — Vibemux'",
+        "When no hot session exists, title falls back to 'Vibemux'",
+        "Title updates on: focused session switch, session rename, session busy state change",
+        "Uses @tauri-apps/api/window getCurrentWindow().setTitle() from frontend",
+        "Typecheck passes"
+      ],
+      "priority": 21,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-052",
+      "title": "2.5D visual enhancement with shadows and glows",
+      "description": "As a user, I want the interface to have stronger depth and layering through shadows and subtle glow effects.",
+      "acceptanceCriteria": [
+        "DeckPane container has multi-layer box-shadow: outer glow (0 0 0 1px {color_token}33), bottom shadow (0 4px 16px rgba(0,0,0,0.6)), inner top highlight (inset 0 1px 0 rgba(255,255,255,0.05))",
+        "DeckPane title bar (drag handle) has gradient background from {color_token}22 to transparent",
+        "ShelfCard has box-shadow: 0 2px 8px rgba(0,0,0,0.4); hover state deepens shadow",
+        "Titlebar bottom separator changed to gradient line (theme color to transparent)",
+        "No CSS perspective or 3D transforms used (performance and layout safety)",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-053",
+      "title": "Session Busy state spinning square indicator",
+      "description": "As a user, I want a spinning square icon on busy sessions so I can see at a glance which sessions have active processes.",
+      "acceptanceCriteria": [
+        "Busy defined as: ProcessState is Running (or frontend derives from process_state field in SessionSnapshot)",
+        "New BusyIndicator.svelte component: 10x10px square outline, CSS animation rotate 1s linear infinite",
+        "Square color uses session color_token color",
+        "DeckPane title bar: BusyIndicator shown left of session name, only when session is busy",
+        "ShelfCard: BusyIndicator shown next to session name, only when session is busy",
+        "When not busy, indicator is completely hidden (display: none), does not occupy space",
+        "Animation is smooth and does not impact other UI performance",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 23,
+      "passes": false,
       "notes": ""
     }
   ]

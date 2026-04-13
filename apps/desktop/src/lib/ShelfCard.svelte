@@ -73,7 +73,7 @@
   }
 
   function startRename() {
-    renameValue = session.name;
+    renameValue = session.customName ?? session.name;
     renamingInline = true;
     setTimeout(() => renameInput?.focus(), 0);
   }
@@ -127,7 +127,7 @@
     />
   {:else}
     <span class="color-dot" style="background: {dotColor};"></span>
-    <span class="session-name">{session.name}</span>
+    <span class="session-name">{session.customName ?? session.name}</span>
     {#if badge}
       <span class="badge" style="color: {badge.color};">{badge.label}</span>
     {/if}

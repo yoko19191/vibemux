@@ -1,71 +1,33 @@
-# Ralph Progress - Vibemux UX Improvements
-# Branch: ralph/ux-improvements
-# Started: 2026-04-13
-
 ## Codebase Patterns
-- Tauri commands are in `apps/desktop/src-tauri/src/commands.rs`, registered in `lib.rs` invoke_handler
-- Config system in `apps/desktop/src-tauri/src/config.rs` — UserConfig with sections, load/save with atomic write, serde + TOML
-- Frontend components in `apps/desktop/src/lib/` — Svelte 5 with $state/$derived/$props runes
-- App.svelte is the main orchestrator: holds sessions state, event listener, keyboard handler, and renders Deck/Shelf/overlays
-- MuxEvents emitted from Rust via `events.rs` event bridge, frontend listens on `mux-event` channel
-- Existing context menu pattern in TerminalPane.svelte: inline overlay + positioned menu div
-- DeckPane has drag-handle (3px colored bar) + pane-header (22px with session name) + terminal-container
-- Config prefix key is now config-driven via `keymap.ts` parsePrefixKey/matchesPrefixKey/formatPrefixKey
-- KeysConfig in config.rs has `prefix: String` field, default now "ctrl+b"
-- Settings button is a floating `<button class="settings-btn">` in App.svelte bottom-right
-- `config_get` returns the full UserConfig as JSON — access nested fields like `cfg.keys.prefix`
-
+- Shelf height offset is referenced in App.svelte as `bottom: Xpx` in `.content-area.has-shelf` and `.nav-indicator.shelf-offset` — update both when changing shelf height
+- ShelfCard is a flex column by default; for compact layouts, switch to flex row with `align-items: center`
+- Typecheck: run `npm run check` from `apps/desktop/`
+- ShelfCard uses `session.name` directly (not via a helper) — use `session.customName ?? session.name` pattern when displaying names
 ---
 
-## 2026-04-13 - US-032
-- Added Titlebar.svelte (36px fixed top bar, workspace dot + label, +/⌕/⚙ buttons with tooltips)
-- Updated App.svelte: integrated Titlebar, wrapped content in .content-area (top: 36px), removed floating settings-btn
-- Files changed: App.svelte, src/lib/Titlebar.svelte (new)
-- **Learnings for future iterations:**
-  - content-area uses position:absolute with top:36px to sit below titlebar
-  - Titlebar z-index:100 prevents terminal content overlap
+# Ralph Progress Log
+Started: 2026年 4月13日 星期一 23时42分41秒 CST
 ---
 
-## 2026-04-13 - US-033
-- Added `onboarding_completed: bool` field to UserConfig in config.rs with `#[serde(default)]`
-- Added `detect_shells` Tauri command: reads /etc/shells on macOS/Linux, checks known paths on Windows
-- Registered detect_shells in lib.rs invoke_handler
-- Files changed: config.rs, commands.rs, lib.rs
+## 2026-04-13 - US-044
+- Reduced shelf height from ~62px to 31px
+- Shelf.svelte: set explicit `height: 31px`, removed vertical padding
+- ShelfCard.svelte: switched from column to row layout, removed card-header wrapper and card-time, made card-cwd inline
+- App.svelte: updated `bottom: 62px` → `bottom: 31px` in `.content-area.has-shelf` and `.nav-indicator.shelf-offset`
 - **Learnings for future iterations:**
-  - `#[serde(default)]` on UserConfig struct means all fields get serde defaults — existing configs load fine
-  - detect_shells filters to paths that exist on disk
+  - The shelf height is controlled by the fixed `bottom` offset in App.svelte (not a CSS variable)
+  - ShelfCard had 3 rows (name, cwd, time); compact layout drops time and flattens to single row
+  - `formatTime` function still exists in ShelfCard but is now unused — left in place (not called)
 ---
 
-## 2026-04-13 - US-034..037
-- Created Onboarding.svelte (orchestrator), OnboardingStep1-4.svelte, presetThemes.ts
-- App.svelte: checks onboarding_completed on mount; if false, shows Onboarding overlay and defers session creation
-- handleOnboardingComplete() sets prefixKeyConfig and calls createInitialSession()
-- Files changed: App.svelte, src/lib/Onboarding.svelte (new), OnboardingStep1-4.svelte (new), presetThemes.ts (new)
+## 2026-04-14 - US-045
+- Fixed rename persistence: ShelfCard now displays `customName ?? name` instead of `name`
+- Fixed ShelfCard startRename() to pre-fill with `customName ?? name` as initial value
+- Backend was already fully implemented: `custom_name` field in Session, `rename_session` sets both fields, `set_session_title` guards on `custom_name.is_none()`, `SessionSnapshot` exposes `customName`
+- Deck.svelte `getName()` already used `customName ?? name` — no change needed
+- DeckPane already shows cwd as subtitle — no change needed
+- Files changed: apps/desktop/src/lib/ShelfCard.svelte
 - **Learnings for future iterations:**
-  - Onboarding defers session creation — createInitialSession() extracted as separate function
-  - presetThemes.ts has 3 themes: Dark, Solarized Dark, Monokai with full ANSI 16 colors
----
-
-## 2026-04-13 - US-038..043
-- Created ContextMenu.svelte: shared context menu with separator, submenu (color picker), disabled items
-- Updated DeckPane.svelte: header action buttons (park/rename/close) on focused+hovered, right-click context menu on header
-- Updated Deck.svelte: added onPark/onClose props, passed to DeckPane
-- Updated ShelfCard.svelte: right-click context menu with recall/rename/color/close/kill, inline rename
-- Updated Shelf.svelte: added onRename/onSetColor/onClose/onKill props, passed to ShelfCard
-- Updated TerminalPane.svelte: migrated inline context menu to shared ContextMenu component
-- Updated App.svelte: added closeSessionById, handleShelfRename, handleShelfSetColor, handleShelfKill helpers
-- Files changed: ContextMenu.svelte (new), DeckPane.svelte, Deck.svelte, ShelfCard.svelte, Shelf.svelte, TerminalPane.svelte, App.svelte
-- **Learnings for future iterations:**
-  - ContextMenu submenu children now have per-item onSelect callbacks (not shared onClick)
-  - DeckPane startRename uses CustomEvent dispatch to signal parent — workaround for missing onStartRename prop
-  - ShelfCard inline rename uses onblur to cancel (avoids needing a separate cancel button)
----
-- Changed default prefix key from "cmd+space" to "ctrl+b" in config.rs KeysConfig::default()
-- Created `apps/desktop/src/lib/keymap.ts` with parsePrefixKey, matchesPrefixKey, formatPrefixKey
-- Updated App.svelte: loads keys.prefix from config_get on mount, uses matchesPrefixKey for detection, shows prefixKeyDisplay in nav indicator and HelpOverlay
-- Files changed: config.rs, App.svelte, src/lib/keymap.ts (new)
-- **Learnings for future iterations:**
-  - `config_get` returns full UserConfig JSON — access as `cfg.keys.prefix`
-  - Svelte 5 $derived works well for computed values from $state
-  - keymap.ts is now the single source of truth for prefix key parsing/display
+  - Backend custom_name logic was already in place from a prior iteration — always check existing code before assuming backend work is needed
+  - ShelfCard uses `session.name` directly (not via a helper), so it needs explicit `customName ?? name` pattern
 ---
