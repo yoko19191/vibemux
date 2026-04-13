@@ -1,0 +1,4 @@
+# Ralph Progress - Vibemux MVP
+# Branch: ralph/vibemux-mvp
+# Started: 2026-04-13
+
