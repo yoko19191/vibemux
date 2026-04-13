@@ -340,6 +340,52 @@ pub fn detect_shells() -> Vec<String> {
     }
 }
 
+#[tauri::command]
+pub fn list_monospace_fonts() -> Vec<String> {
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        let output = std::process::Command::new("fc-list")
+            .args([":spacing=mono", "--format=%{family}\n"])
+            .output();
+        if let Ok(out) = output {
+            if out.status.success() {
+                let raw = String::from_utf8_lossy(&out.stdout);
+                let mut fonts: Vec<String> = raw
+                    .lines()
+                    .flat_map(|l| l.split(','))
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                fonts.sort();
+                fonts.dedup();
+                if !fonts.is_empty() {
+                    return fonts;
+                }
+            }
+        }
+        // fallback preset list
+        vec![
+            "monospace".to_string(),
+            "Menlo".to_string(),
+            "Monaco".to_string(),
+            "Courier New".to_string(),
+            "JetBrains Mono".to_string(),
+            "Fira Code".to_string(),
+            "SF Mono".to_string(),
+        ]
+    }
+    #[cfg(target_os = "windows")]
+    {
+        vec![
+            "Consolas".to_string(),
+            "Courier New".to_string(),
+            "Lucida Console".to_string(),
+            "JetBrains Mono".to_string(),
+            "Fira Code".to_string(),
+        ]
+    }
+}
+
 fn merge_json(base: &mut serde_json::Value, update: &serde_json::Value) {
     if let (serde_json::Value::Object(base_map), serde_json::Value::Object(update_map)) =
         (base, update)

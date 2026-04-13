@@ -24,10 +24,15 @@
     max_hot_sessions: number;
   }
 
+  interface KeysConfig {
+    prefix: string;
+  }
+
   interface UserConfig {
     terminal: TerminalConfig;
     theme: ThemeConfig;
     layout: LayoutConfig;
+    keys: KeysConfig;
   }
 
   interface Props {
@@ -38,14 +43,50 @@
   let { onClose, onConfigChange }: Props = $props();
 
   let config: UserConfig | null = $state(null);
-  let activeTab: "terminal" | "theme" | "layout" = $state("terminal");
+  let activeTab: "terminal" | "theme" | "layout" | "keys" = $state("terminal");
   let saving = $state(false);
+  let systemFonts: string[] = $state([]);
+
+  const PRESET_PREFIX_KEYS = [
+    { label: "Ctrl+B (tmux style)", value: "ctrl+b" },
+    { label: "Ctrl+Space (Spacemacs style)", value: "ctrl+space" },
+    { label: "Ctrl+` (Backtick)", value: "ctrl+`" },
+    { label: "Ctrl+A (screen style)", value: "ctrl+a" },
+    { label: "Cmd+Space (macOS)", value: "cmd+space" },
+    { label: "Custom…", value: "__custom__" },
+  ];
+
+  let prefixDropdownValue = $state("ctrl+b");
+  let customPrefixValue = $state("");
+  let showCustomInput = $derived(prefixDropdownValue === "__custom__");
+
+  $effect(() => {
+    if (config?.keys?.prefix) {
+      const preset = PRESET_PREFIX_KEYS.find((p) => p.value === config!.keys.prefix && p.value !== "__custom__");
+      if (preset) {
+        prefixDropdownValue = preset.value;
+        customPrefixValue = "";
+      } else {
+        prefixDropdownValue = "__custom__";
+        customPrefixValue = config.keys.prefix;
+      }
+    }
+  });
 
   async function loadConfig() {
     try {
       config = await invoke<UserConfig>("config_get");
     } catch (e) {
       console.error("Failed to load config:", e);
+    }
+  }
+
+  async function loadFonts() {
+    try {
+      systemFonts = await invoke<string[]>("list_monospace_fonts");
+    } catch (e) {
+      console.error("Failed to load fonts:", e);
+      systemFonts = ["monospace", "Menlo", "Monaco", "Courier New", "JetBrains Mono", "Fira Code"];
     }
   }
 
@@ -75,7 +116,22 @@
     applyUpdate({ layout: { [field]: value } });
   }
 
+  function handlePrefixDropdownChange(value: string) {
+    prefixDropdownValue = value;
+    if (value !== "__custom__") {
+      applyUpdate({ keys: { prefix: value } });
+    }
+  }
+
+  function handleCustomPrefixBlur() {
+    const val = customPrefixValue.trim();
+    if (val) {
+      applyUpdate({ keys: { prefix: val } });
+    }
+  }
+
   loadConfig();
+  loadFonts();
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -91,19 +147,34 @@
       <button class="tab" class:active={activeTab === "terminal"} onclick={() => (activeTab = "terminal")}>Terminal</button>
       <button class="tab" class:active={activeTab === "theme"} onclick={() => (activeTab = "theme")}>Theme</button>
       <button class="tab" class:active={activeTab === "layout"} onclick={() => (activeTab = "layout")}>Layout</button>
+      <button class="tab" class:active={activeTab === "keys"} onclick={() => (activeTab = "keys")}>Keys</button>
     </div>
 
     {#if config}
       {#if activeTab === "terminal"}
         <div class="section">
-          <label class="field">
+          <div class="field">
             <span>Font Family</span>
-            <input
-              type="text"
-              value={config.terminal.font_family}
-              onchange={(e) => handleTerminalChange("font_family", (e.target as HTMLInputElement).value)}
-            />
-          </label>
+            <div class="font-field">
+              <select
+                value={config.terminal.font_family}
+                onchange={(e) => handleTerminalChange("font_family", (e.target as HTMLSelectElement).value)}
+              >
+                {#each systemFonts as font}
+                  <option value={font} selected={font === config.terminal.font_family}>{font}</option>
+                {/each}
+                {#if !systemFonts.includes(config.terminal.font_family)}
+                  <option value={config.terminal.font_family} selected>{config.terminal.font_family}</option>
+                {/if}
+              </select>
+              <input
+                type="text"
+                placeholder="or type a font name"
+                value={config.terminal.font_family}
+                onchange={(e) => handleTerminalChange("font_family", (e.target as HTMLInputElement).value)}
+              />
+            </div>
+          </div>
           <label class="field">
             <span>Font Size</span>
             <input
@@ -183,6 +254,31 @@
               onchange={(e) => handleLayoutChange("max_hot_sessions", parseInt((e.target as HTMLInputElement).value))}
             />
           </label>
+        </div>
+      {:else if activeTab === "keys"}
+        <div class="section">
+          <div class="field">
+            <span>Navigation Prefix Key</span>
+            <select
+              value={prefixDropdownValue}
+              onchange={(e) => handlePrefixDropdownChange((e.target as HTMLSelectElement).value)}
+            >
+              {#each PRESET_PREFIX_KEYS as opt}
+                <option value={opt.value}>{opt.label}</option>
+              {/each}
+            </select>
+          </div>
+          {#if showCustomInput}
+            <div class="field">
+              <span>Custom key combo</span>
+              <input
+                type="text"
+                placeholder="e.g. ctrl+shift+x"
+                bind:value={customPrefixValue}
+                onblur={handleCustomPrefixBlur}
+              />
+            </div>
+          {/if}
         </div>
       {/if}
     {:else}
@@ -285,8 +381,28 @@
   }
 
   .field input[type="text"],
-  .field input[type="number"] {
+  .field input[type="number"],
+  .field select {
     flex: 1;
+    background: #111;
+    border: 1px solid #333;
+    border-radius: 4px;
+    color: #d9d4c7;
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    font-family: inherit;
+  }
+
+  .font-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    flex: 1;
+  }
+
+  .font-field select,
+  .font-field input[type="text"] {
+    width: 100%;
     background: #111;
     border: 1px solid #333;
     border-radius: 4px;

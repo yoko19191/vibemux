@@ -45,6 +45,7 @@ pub fn run() {
             commands::open_url,
             commands::session_set_title,
             commands::detect_shells,
+            commands::list_monospace_fonts,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
