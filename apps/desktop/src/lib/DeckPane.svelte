@@ -45,5 +45,6 @@
     box-sizing: border-box;
     overflow: hidden;
     flex-shrink: 0;
+    transition: width 150ms ease-out, opacity 150ms ease-out;
   }
 </style>
