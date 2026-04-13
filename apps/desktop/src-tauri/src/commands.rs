@@ -177,6 +177,17 @@ pub async fn session_kill(
 }
 
 #[tauri::command]
+pub async fn session_recall(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<(), String> {
+    let uuid = Uuid::parse_str(&session_id)
+        .map_err(|_| format!("invalid session id: '{}'", session_id))?;
+    let mut manager = state.lock().await;
+    manager.recall_session(uuid)
+}
+
+#[tauri::command]
 pub async fn session_park(
     state: State<'_, AppState>,
     session_id: String,

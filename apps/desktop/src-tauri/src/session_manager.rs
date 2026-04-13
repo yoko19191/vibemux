@@ -37,6 +37,19 @@ pub enum MuxEvent {
     SessionParked {
         session_id: Uuid,
     },
+    ReplayStart {
+        session_id: Uuid,
+        from_seq: u64,
+        to_seq: u64,
+    },
+    ReplayChunk {
+        session_id: Uuid,
+        data: Vec<u8>,
+        seq: u64,
+    },
+    ReplayEnd {
+        session_id: Uuid,
+    },
 }
 
 struct ManagedSession {
@@ -249,14 +262,60 @@ impl SessionManager {
         self.workspace.warm_session_ids.push(session_id);
 
         if self.workspace.focused_session_id == Some(session_id) {
-            self.workspace.focused_session_id = self
-                .workspace
-                .hot_session_ids
-                .first()
-                .copied();
+            self.workspace.focused_session_id = self.workspace.hot_session_ids.first().copied();
         }
 
         let _ = self.event_tx.send(MuxEvent::SessionParked { session_id });
+        Ok(())
+    }
+
+    pub fn recall_session(&mut self, session_id: Uuid) -> Result<(), String> {
+        let managed = self
+            .sessions
+            .get_mut(&session_id)
+            .ok_or_else(|| format!("session {} not found", session_id))?;
+
+        if managed.session.thermal_state != ThermalState::Warm {
+            return Err(format!("session {} is not a warm session", session_id));
+        }
+
+        managed.session.thermal_state = ThermalState::Hot;
+        managed.session.updated_at = Utc::now();
+
+        self.workspace.warm_session_ids.retain(|id| *id != session_id);
+        self.workspace.hot_session_ids.push(session_id);
+        self.workspace.focused_session_id = Some(session_id);
+
+        // Emit replay events from the ring buffer
+        let buffer = Arc::clone(&managed.output_buffer);
+        let event_tx = self.event_tx.clone();
+        let sid = session_id;
+        tokio::spawn(async move {
+            let entries = {
+                let buf = buffer.lock().await;
+                buf.get_all()
+            };
+            if entries.is_empty() {
+                let _ = event_tx.send(MuxEvent::ReplayEnd { session_id: sid });
+                return;
+            }
+            let from_seq = entries.first().map(|e| e.seq).unwrap_or(0);
+            let to_seq = entries.last().map(|e| e.seq).unwrap_or(0);
+            let _ = event_tx.send(MuxEvent::ReplayStart {
+                session_id: sid,
+                from_seq,
+                to_seq,
+            });
+            for entry in entries {
+                let _ = event_tx.send(MuxEvent::ReplayChunk {
+                    session_id: sid,
+                    data: entry.data,
+                    seq: entry.seq,
+                });
+            }
+            let _ = event_tx.send(MuxEvent::ReplayEnd { session_id: sid });
+        });
+
         Ok(())
     }
 

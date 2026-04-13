@@ -348,8 +348,8 @@
         "Typecheck passes"
       ],
       "priority": 19,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "session_recall Tauri command moves session from warm to hot, emits ReplayStart/ReplayChunk/ReplayEnd events from ring buffer. Frontend handles replayStart (updates thermalState, sets focus), replayChunk (writes to terminal), J/K/Enter shelf navigation in Nav Mode."
     },
     {
       "id": "US-020",

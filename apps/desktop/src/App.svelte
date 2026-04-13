@@ -15,6 +15,7 @@
   let homeCwd = $state("/");
   let terminalApis: Map<string, { writeOutput: (data: string) => void }> = new Map();
   let unlisten: (() => void) | null = null;
+  let selectedShelfIdx: number | null = $state(null);
 
   const isMac = navigator.platform.toUpperCase().includes("MAC");
 
@@ -41,7 +42,16 @@
           const hotSessions = sessions.filter((s) => s.thermalState === "Hot");
           focusedSessionId = hotSessions[0]?.id ?? null;
         }
+      } else if (muxEvent.type === "replayStart") {
+        // Session is being recalled — move to hot in local state
+        sessions = sessions.map((s) =>
+          s.id === muxEvent.sessionId ? { ...s, thermalState: "Hot" as const } : s
+        );
+        focusedSessionId = muxEvent.sessionId;
+      } else if (muxEvent.type === "replayChunk") {
+        terminalApis.get(muxEvent.sessionId)?.writeOutput(muxEvent.data);
       }
+      // replayEnd: no special handling needed — live output resumes naturally
     });
 
     try {
@@ -143,6 +153,30 @@
         navMode = false;
         e.preventDefault();
         break;
+      case "j":
+      case "ArrowDown":
+        if (warmSessions.length > 0) {
+          selectedShelfIdx = selectedShelfIdx === null
+            ? 0
+            : Math.min(selectedShelfIdx + 1, warmSessions.length - 1);
+          e.preventDefault();
+        }
+        break;
+      case "k":
+      case "ArrowUp":
+        if (warmSessions.length > 0 && selectedShelfIdx !== null) {
+          selectedShelfIdx = Math.max(selectedShelfIdx - 1, 0);
+          e.preventDefault();
+        }
+        break;
+      case "Enter":
+        if (selectedShelfIdx !== null && warmSessions[selectedShelfIdx]) {
+          recallSession(warmSessions[selectedShelfIdx].id);
+          selectedShelfIdx = null;
+          navMode = false;
+          e.preventDefault();
+        }
+        break;
     }
   }
 
@@ -193,6 +227,14 @@
     }
   }
 
+  async function recallSession(sessionId: string) {
+    try {
+      await invoke("session_recall", { sessionId });
+    } catch (e) {
+      console.error("Failed to recall session:", e);
+    }
+  }
+
   function handleSessionCreated(snapshot: SessionSnapshot) {
     sessions = [...sessions, snapshot];
     focusedSessionId = snapshot.id;
@@ -218,12 +260,12 @@
     <div class="loading">Starting session...</div>
   {/if}
 
-  <Shelf sessions={warmSessions} />
+  <Shelf sessions={warmSessions} onRecall={recallSession} selectedIdx={selectedShelfIdx} />
 
   {#if navMode}
     <div class="nav-indicator" class:shelf-offset={warmSessions.length > 0}>
       <span class="nav-badge">NAV</span>
-      <span class="nav-hint">h/l: switch · n: new · b: park · x: close · X: kill · esc: cancel</span>
+      <span class="nav-hint">h/l: switch · n: new · b: park · j/k: shelf · Enter: recall · x: close · X: kill · esc: cancel</span>
     </div>
   {/if}
 

@@ -224,3 +224,19 @@
   - Use class:shelf-offset on nav-indicator to conditionally offset
   - hotSessions/warmSessions derived from sessions array by thermalState filter
 ---
+
+## 2026-04-13 - US-019
+- Added MuxEvent::ReplayStart/ReplayChunk/ReplayEnd variants to session_manager.rs
+- Added recall_session() to SessionManager: moves warm→hot, emits replay events from ring buffer via tokio::spawn
+- Added session_recall Tauri command in commands.rs
+- Registered session_recall in lib.rs generate_handler!
+- Added FrontendEvent::ReplayStart/ReplayChunk/ReplayEnd variants in events.rs, wired in convert_event()
+- Added replay event types to MuxEvent union in types.ts
+- App.svelte: handles replayStart (updates thermalState to Hot, sets focus), replayChunk (writes to terminal), J/K/Enter shelf navigation in Nav Mode, selectedShelfIdx state, recallSession() function
+- Shelf.svelte: added selectedIdx prop, highlights selected card with blue outline
+- Files changed: src-tauri/src/session_manager.rs, src-tauri/src/commands.rs, src-tauri/src/lib.rs, src-tauri/src/events.rs, src/lib/types.ts, src/App.svelte, src/lib/Shelf.svelte
+- **Learnings for future iterations:**
+  - Replay events are emitted from a tokio::spawn task — ring buffer entries are cloned before spawning
+  - selectedShelfIdx must be reset to null when navMode exits or recall is triggered
+  - Switch statement closing brace must match handleKeydown function brace — easy to miss when adding cases
+---

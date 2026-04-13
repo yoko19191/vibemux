@@ -34,6 +34,22 @@ pub enum FrontendEvent {
     SessionParked {
         session_id: String,
     },
+    #[serde(rename_all = "camelCase")]
+    ReplayStart {
+        session_id: String,
+        from_seq: u64,
+        to_seq: u64,
+    },
+    #[serde(rename_all = "camelCase")]
+    ReplayChunk {
+        session_id: String,
+        data: String,
+        seq: u64,
+    },
+    #[serde(rename_all = "camelCase")]
+    ReplayEnd {
+        session_id: String,
+    },
 }
 
 const BATCH_INTERVAL_MS: u64 = 12;
@@ -91,6 +107,27 @@ fn convert_event(event: MuxEvent) -> FrontendEvent {
             }
         }
         MuxEvent::SessionParked { session_id } => FrontendEvent::SessionParked {
+            session_id: session_id.to_string(),
+        },
+        MuxEvent::ReplayStart {
+            session_id,
+            from_seq,
+            to_seq,
+        } => FrontendEvent::ReplayStart {
+            session_id: session_id.to_string(),
+            from_seq,
+            to_seq,
+        },
+        MuxEvent::ReplayChunk {
+            session_id,
+            data,
+            seq,
+        } => FrontendEvent::ReplayChunk {
+            session_id: session_id.to_string(),
+            data: String::from_utf8_lossy(&data).to_string(),
+            seq,
+        },
+        MuxEvent::ReplayEnd { session_id } => FrontendEvent::ReplayEnd {
             session_id: session_id.to_string(),
         },
     }

@@ -5,19 +5,20 @@
   interface Props {
     sessions: SessionSnapshot[];
     onRecall?: (sessionId: string) => void;
+    selectedIdx?: number | null;
   }
 
-  let { sessions, onRecall }: Props = $props();
+  let { sessions, onRecall, selectedIdx = null }: Props = $props();
 </script>
 
 {#if sessions.length > 0}
   <div class="shelf">
     <div class="shelf-label">SHELF</div>
     <div class="shelf-cards">
-      {#each sessions as session (session.id)}
+      {#each sessions as session, i (session.id)}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div onclick={() => onRecall?.(session.id)}>
+        <div class:selected={selectedIdx === i} onclick={() => onRecall?.(session.id)}>
           <ShelfCard {session} />
         </div>
       {/each}
@@ -60,5 +61,10 @@
 
   .shelf-cards::-webkit-scrollbar {
     display: none;
+  }
+
+  .selected :global(.shelf-card) {
+    outline: 2px solid #3b82f6;
+    outline-offset: -2px;
   }
 </style>
