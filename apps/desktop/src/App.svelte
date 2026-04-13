@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
   import Deck from "./lib/Deck.svelte";
   import Shelf from "./lib/Shelf.svelte";
   import NewSessionPanel from "./lib/NewSessionPanel.svelte";
@@ -37,6 +38,18 @@
 
   let hotSessions = $derived(sessions.filter((s) => s.thermalState === "Hot"));
   let warmSessions = $derived(sessions.filter((s) => s.thermalState === "Warm"));
+
+  // Dynamic window title
+  $effect(() => {
+    const focused = sessions.find((s) => s.id === focusedSessionId && s.thermalState === "Hot");
+    let title = "Vibemux";
+    if (focused) {
+      const name = focused.customName ?? focused.name;
+      const busy = focused.processState.type === "Running";
+      title = busy ? `⚙ ${name} — Vibemux` : `${name} — Vibemux`;
+    }
+    getCurrentWindow().setTitle(title).catch(() => {});
+  });
 
   onMount(async () => {
     unlisten = await listen<MuxEvent>("mux-event", (event) => {
@@ -471,7 +484,10 @@
   {/if}
 
   {#if showSettings}
-    <SettingsPanel onClose={() => (showSettings = false)} />
+    <SettingsPanel
+      onClose={() => (showSettings = false)}
+      onConfigChange={(cfg) => { if (cfg?.keys?.prefix) prefixKeyConfig = cfg.keys.prefix; }}
+    />
   {/if}
 
   {#if showSearch}
