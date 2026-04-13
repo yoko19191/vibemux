@@ -182,6 +182,53 @@ impl SessionManager {
         }
     }
 
+    pub fn focus_session(&mut self, session_id: Uuid) -> Result<(), String> {
+        if !self.sessions.contains_key(&session_id) {
+            return Err(format!("session {} not found", session_id));
+        }
+        self.workspace.focused_session_id = Some(session_id);
+        Ok(())
+    }
+
+    pub fn close_session(&mut self, session_id: Uuid) -> Result<(), String> {
+        let managed = self
+            .sessions
+            .get(&session_id)
+            .ok_or_else(|| format!("session {} not found", session_id))?;
+
+        // Send SIGHUP for graceful close
+        let _ = managed.pty.kill(); // Best effort — will be force-killed by timeout in caller
+        self.remove_session_from_workspace(session_id);
+        self.sessions.remove(&session_id);
+        Ok(())
+    }
+
+    pub fn kill_session(&mut self, session_id: Uuid) -> Result<(), String> {
+        let managed = self
+            .sessions
+            .get(&session_id)
+            .ok_or_else(|| format!("session {} not found", session_id))?;
+
+        let _ = managed.pty.kill();
+        self.remove_session_from_workspace(session_id);
+        self.sessions.remove(&session_id);
+        Ok(())
+    }
+
+    fn remove_session_from_workspace(&mut self, session_id: Uuid) {
+        self.workspace.hot_session_ids.retain(|id| *id != session_id);
+        self.workspace.warm_session_ids.retain(|id| *id != session_id);
+
+        if self.workspace.focused_session_id == Some(session_id) {
+            self.workspace.focused_session_id = self
+                .workspace
+                .hot_session_ids
+                .first()
+                .or(self.workspace.warm_session_ids.first())
+                .copied();
+        }
+    }
+
     async fn route_output(
         session_id: Uuid,
         mut output_rx: mpsc::UnboundedReceiver<Vec<u8>>,

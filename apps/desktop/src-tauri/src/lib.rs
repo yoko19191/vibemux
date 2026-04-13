@@ -23,6 +23,9 @@ pub fn run() {
             commands::session_create,
             commands::session_write,
             commands::session_resize,
+            commands::session_focus,
+            commands::session_close,
+            commands::session_kill,
             commands::workspace_get_snapshot,
         ])
         .setup(|app| {

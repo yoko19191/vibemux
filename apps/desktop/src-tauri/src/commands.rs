@@ -142,3 +142,36 @@ pub async fn workspace_get_snapshot(
         sessions,
     })
 }
+
+#[tauri::command]
+pub async fn session_focus(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<(), String> {
+    let uuid = Uuid::parse_str(&session_id)
+        .map_err(|_| format!("invalid session id: '{}'", session_id))?;
+    let mut manager = state.lock().await;
+    manager.focus_session(uuid)
+}
+
+#[tauri::command]
+pub async fn session_close(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<(), String> {
+    let uuid = Uuid::parse_str(&session_id)
+        .map_err(|_| format!("invalid session id: '{}'", session_id))?;
+    let mut manager = state.lock().await;
+    manager.close_session(uuid)
+}
+
+#[tauri::command]
+pub async fn session_kill(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<(), String> {
+    let uuid = Uuid::parse_str(&session_id)
+        .map_err(|_| format!("invalid session id: '{}'", session_id))?;
+    let mut manager = state.lock().await;
+    manager.kill_session(uuid)
+}
