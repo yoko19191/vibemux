@@ -126,15 +126,12 @@
       onclick={(e) => e.stopPropagation()}
     />
   {:else}
-    <div class="card-header">
-      <span class="color-dot" style="background: {dotColor};"></span>
-      <span class="session-name">{session.name}</span>
-      {#if badge}
-        <span class="badge" style="color: {badge.color};">{badge.label}</span>
-      {/if}
-    </div>
-    <div class="card-cwd">{shortCwd}</div>
-    <div class="card-time">{formatTime(session.lastActivityAt)}</div>
+    <span class="color-dot" style="background: {dotColor};"></span>
+    <span class="session-name">{session.name}</span>
+    {#if badge}
+      <span class="badge" style="color: {badge.color};">{badge.label}</span>
+    {/if}
+    <span class="card-cwd">{shortCwd}</span>
   {/if}
 </div>
 
@@ -149,27 +146,23 @@
 <style>
   .shelf-card {
     flex-shrink: 0;
-    width: 160px;
-    padding: 0.4rem 0.5rem;
+    width: 140px;
+    height: 21px;
+    padding: 0 0.5rem;
     border: 1px solid;
     border-radius: 4px;
     background: rgba(255, 255, 255, 0.04);
     cursor: pointer;
     display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.35rem;
     transition: background 100ms;
+    overflow: hidden;
   }
 
   .shelf-card:hover {
     background: rgba(255, 255, 255, 0.08);
-  }
-
-  .card-header {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    overflow: hidden;
   }
 
   .color-dot {
@@ -201,11 +194,8 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  .card-time {
-    font-size: 0.6rem;
-    color: #555;
+    flex-shrink: 1;
+    min-width: 0;
   }
 
   .rename-input {

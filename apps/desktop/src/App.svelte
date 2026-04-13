@@ -519,7 +519,7 @@
   }
 
   .content-area.has-shelf {
-    bottom: 62px;
+    bottom: 31px;
   }
 
   .error {
@@ -560,7 +560,7 @@
   }
 
   .nav-indicator.shelf-offset {
-    bottom: 62px;
+    bottom: 31px;
   }
 
   .nav-badge {

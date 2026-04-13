@@ -42,10 +42,11 @@
     bottom: 0;
     left: 0;
     right: 0;
+    height: 31px;
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.35rem 0.75rem;
+    padding: 0 0.75rem;
     background: rgba(17, 17, 17, 0.95);
     border-top: 1px solid #2a2a2a;
     z-index: 40;
