@@ -49,6 +49,7 @@
   }: Props = $props();
 
   let displayName = $derived(sessionName || terminalTitle);
+  let dynamicSuffix = $derived(sessionName && terminalTitle && terminalTitle !== sessionName ? `(${terminalTitle})` : "");
   let shortCwd = $derived(sessionCwd.replace(/^.*\/([^/]+)$/, "$1") || sessionCwd);
   let rendererType: 'webgl' | 'canvas' = $state('webgl');
 
@@ -197,7 +198,7 @@
       {#if isBusy}
         <BusyIndicator color={borderColor} />
       {/if}
-      <span class="session-name">{displayName}</span>
+      <span class="session-name">{displayName}</span>{#if dynamicSuffix}<span class="session-dynamic">{dynamicSuffix}</span>{/if}
       {#if shortCwd}
         <span class="session-cwd">{shortCwd}</span>
       {/if}
@@ -281,6 +282,18 @@
     flex-shrink: 0;
     max-width: 40%;
     margin-left: 0.25rem;
+  }
+
+  .session-dynamic {
+    font-size: 0.7rem;
+    color: #666;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: system-ui, -apple-system, sans-serif;
+    flex-shrink: 1;
+    min-width: 0;
+    margin-left: 0.2rem;
   }
 
   .renderer-badge {
