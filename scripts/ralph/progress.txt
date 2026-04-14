@@ -20,6 +20,23 @@ Started: 2026年 4月13日 星期一 23时42分41秒 CST
   - `formatTime` function still exists in ShelfCard but is now unused — left in place (not called)
 ---
 
+## 2026-04-14 - US-046 through US-053 (PRD sync)
+- All stories US-046 through US-053 were already implemented in prior commits but PRD was not updated
+- Updated scripts/ralph/prd.json to mark all 8 stories as passes: true
+- US-046: DeckPane title text clip (overflow:hidden, white-space:nowrap, text-overflow:clip already in place)
+- US-047: Prefix Key setting in Settings panel Keys tab (dropdown + custom input + live config update)
+- US-048: list_monospace_fonts Tauri command + font dropdown in Settings
+- US-049: Preset theme cards in Settings Theme tab (8 presets with swatches)
+- US-050: Theme-colored border around DeckPane (focused=2px, unfocused=1px semi-transparent)
+- US-051: Dynamic window title (session name + busy indicator via setTitle)
+- US-052: 2.5D visual enhancement (multi-layer box-shadow, gradient drag handle, ShelfCard shadow)
+- US-053: BusyIndicator.svelte spinning square shown in DeckPane and ShelfCard
+- Files changed: scripts/ralph/prd.json, scripts/ralph/progress.txt
+- **Learnings for future iterations:**
+  - PRD updates must go to scripts/ralph/prd.json (active), not the archive path
+  - All stories in this PRD are now complete
+---
+
 ## 2026-04-14 - US-045
 - Fixed rename persistence: ShelfCard now displays `customName ?? name` instead of `name`
 - Fixed ShelfCard startRename() to pre-fill with `customName ?? name` as initial value
