@@ -137,6 +137,8 @@
       processState={getProcessState(layout.sessionId)}
       isFocused={layout.isFocused}
       width={layout.width}
+      left={layout.left}
+      zIndex={layout.zIndex}
       isRenaming={renamingSessionId === layout.sessionId}
       {terminalConfig}
       onReady={(api) => onTerminalReady?.(layout.sessionId, api)}
@@ -154,8 +156,7 @@
 
 <style>
   .deck {
-    display: flex;
-    flex-direction: row;
+    position: relative;
     width: 100%;
     height: 100%;
     overflow: hidden;

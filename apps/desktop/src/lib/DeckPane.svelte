@@ -22,6 +22,8 @@
     processState?: ProcessState;
     isFocused: boolean;
     width: number;
+    left?: number;
+    zIndex?: number;
     isRenaming?: boolean;
     terminalConfig?: TerminalConfig;
     onReady?: (api: { writeOutput: (data: string) => void }) => void;
@@ -37,6 +39,7 @@
 
   let {
     sessionId, sessionName, sessionCwd = "", terminalTitle = "", color, processState, isFocused, width,
+    left = 0, zIndex = 1,
     isRenaming = false, terminalConfig,
     onReady, onclick, ondragstart, ondragover, ondrop,
     onRenameConfirm, onRenameCancel, onPark, onClose,
@@ -72,12 +75,11 @@
   let borderColor = $derived(colorMap[color] ?? "#666");
   let borderStyle = $derived(isFocused
     ? `2px solid ${borderColor}`
-    : `1px solid ${borderColor}35`);
+    : `2px solid ${borderColor}aa`);
   let boxShadow = $derived(isFocused
     ? `0 0 8px 2px ${borderColor}55, 0 6px 20px rgba(0,0,0,0.6)`
-    : `0 2px 6px rgba(0,0,0,0.3)`);
-  let opacity = $derived(isFocused ? 1 : 0.7);
-  let filter = $derived(isFocused ? 'brightness(1)' : 'brightness(0.82)');
+    : `0 2px 8px rgba(0,0,0,0.5)`);
+  let filter = $derived(isFocused ? 'brightness(1)' : 'brightness(0.75)');
   let dragOver = $state(false);
   let renameValue = $state("");
   let renameInput: HTMLInputElement | null = $state(null);
@@ -164,7 +166,7 @@
   class="deck-pane"
   class:drag-over={dragOver}
   data-session-id={sessionId}
-  style="width: {width}px; border: {borderStyle}; box-shadow: {boxShadow}; opacity: {opacity}; filter: {filter};"
+  style="width: {width}px; left: {left}px; z-index: {zIndex}; border: {borderStyle}; box-shadow: {boxShadow}; filter: {filter};"
   onclick={onclick}
   onmouseenter={() => (isHovered = true)}
   onmouseleave={() => (isHovered = false)}
@@ -229,11 +231,12 @@
 
 <style>
   .deck-pane {
+    position: absolute;
+    top: 0;
     height: 100%;
     box-sizing: border-box;
     overflow: hidden;
-    flex-shrink: 0;
-    transition: width 150ms ease-out, opacity 150ms ease-out, filter 150ms ease-out;
+    transition: width 150ms ease-out, left 150ms ease-out, opacity 150ms ease-out, filter 150ms ease-out;
     display: flex;
     flex-direction: column;
     border-radius: 4px;
