@@ -81,7 +81,13 @@
     if (focused) {
       const name = focused.customName ?? focused.name;
       const busy = focused.processState.type === "Running";
-      title = busy ? `⚙ ${name} — Vibemux` : `${name} — Vibemux`;
+      const dynamic = focused.terminalTitle && focused.terminalTitle !== name ? focused.terminalTitle : null;
+      const shortCwd = focused.cwd.replace(/^.*\/([^/]+)\/?$/, "$1") || focused.cwd;
+      const hotCount = hotSessions.length;
+      const warmCount = warmSessions.length;
+      const sessionInfo = warmCount > 0 ? `[${hotCount}+${warmCount}]` : `[${hotCount}]`;
+      const label = dynamic ?? name;
+      title = busy ? `⚙ ${label} · ${shortCwd} ${sessionInfo} — Vibemux` : `${label} · ${shortCwd} ${sessionInfo} — Vibemux`;
     }
     getCurrentWindow().setTitle(title).catch(() => {});
   });

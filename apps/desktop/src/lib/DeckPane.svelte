@@ -163,8 +163,9 @@
 <div
   class="deck-pane"
   class:drag-over={dragOver}
+  class:is-busy={isBusy}
   data-session-id={sessionId}
-  style="width: {width}px; left: {left}px; z-index: {zIndex}; border: {borderStyle}; box-shadow: {boxShadow}; filter: {filter};"
+  style="width: {width}px; left: {left}px; z-index: {zIndex}; border: {borderStyle}; box-shadow: {boxShadow}; filter: {filter}; --border-color: {borderColor};"
   onclick={onclick}
   onmouseenter={() => (isHovered = true)}
   onmouseleave={() => (isHovered = false)}
@@ -238,6 +239,15 @@
     display: flex;
     flex-direction: column;
     border-radius: 4px;
+  }
+
+  .is-busy {
+    animation: busy-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes busy-pulse {
+    0%, 100% { box-shadow: var(--box-shadow-base, none), 0 0 4px 1px color-mix(in srgb, var(--border-color) 30%, transparent); }
+    50% { box-shadow: var(--box-shadow-base, none), 0 0 10px 3px color-mix(in srgb, var(--border-color) 60%, transparent); }
   }
 
   .drag-handle {
