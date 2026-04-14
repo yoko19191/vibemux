@@ -36,8 +36,43 @@
   let prefixKeyDisplay = $derived(formatPrefixKey(prefixKeyConfig));
   let showOnboarding = $state(false);
 
+  // Terminal config derived from user config — passed to all TerminalPane instances
+  let terminalConfig: { fontFamily?: string; fontSize?: number; lineHeight?: number; theme?: Record<string, string> } = $state({});
+
   let hotSessions = $derived(sessions.filter((s) => s.thermalState === "Hot"));
   let warmSessions = $derived(sessions.filter((s) => s.thermalState === "Warm"));
+
+  function buildTerminalConfig(cfg: any) {
+    if (!cfg) return undefined;
+    const t = cfg.theme ?? {};
+    return {
+      fontFamily: cfg.terminal?.font_family,
+      fontSize: cfg.terminal?.font_size,
+      lineHeight: cfg.terminal?.line_height,
+      theme: {
+        background: t.background,
+        foreground: t.foreground,
+        cursor: t.cursor,
+        selectionBackground: t.selection,
+        black: t.black,
+        red: t.red,
+        green: t.green,
+        yellow: t.yellow,
+        blue: t.blue,
+        magenta: t.magenta,
+        cyan: t.cyan,
+        white: t.white,
+        brightBlack: t.bright_black,
+        brightRed: t.bright_red,
+        brightGreen: t.bright_green,
+        brightYellow: t.bright_yellow,
+        brightBlue: t.bright_blue,
+        brightMagenta: t.bright_magenta,
+        brightCyan: t.bright_cyan,
+        brightWhite: t.bright_white,
+      },
+    };
+  }
 
   // Dynamic window title
   $effect(() => {
@@ -124,10 +159,11 @@
 
       // Load prefix key from config and check onboarding
       try {
-        const cfg = await invoke<{ keys?: { prefix?: string }; onboarding_completed?: boolean }>("config_get");
+        const cfg = await invoke<any>("config_get");
         if (cfg?.keys?.prefix) {
           prefixKeyConfig = cfg.keys.prefix;
         }
+        terminalConfig = buildTerminalConfig(cfg) ?? {};
         if (!cfg?.onboarding_completed) {
           showOnboarding = true;
           return; // don't create session yet — onboarding will trigger it
@@ -444,6 +480,7 @@
         sessions={hotSessions}
         {focusedSessionId}
         {renamingSessionId}
+        {terminalConfig}
         onTerminalReady={handleTerminalReady}
         onFocusSession={handleFocusSession}
         onRenameConfirm={handleRenameConfirm}
@@ -486,7 +523,10 @@
   {#if showSettings}
     <SettingsPanel
       onClose={() => (showSettings = false)}
-      onConfigChange={(cfg) => { if (cfg?.keys?.prefix) prefixKeyConfig = cfg.keys.prefix; }}
+      onConfigChange={(cfg) => {
+        if (cfg?.keys?.prefix) prefixKeyConfig = cfg.keys.prefix;
+        terminalConfig = buildTerminalConfig(cfg) ?? {};
+      }}
     />
   {/if}
 

@@ -5,10 +5,18 @@
   import { calculateDeckLayout } from "./deckLayout";
   import type { SessionSnapshot, ColorToken, ProcessState } from "./types";
 
+  interface TerminalConfig {
+    fontFamily?: string;
+    fontSize?: number;
+    lineHeight?: number;
+    theme?: Record<string, string>;
+  }
+
   interface Props {
     sessions: SessionSnapshot[];
     focusedSessionId: string | null;
     renamingSessionId?: string | null;
+    terminalConfig?: TerminalConfig;
     onTerminalReady?: (sessionId: string, api: { writeOutput: (data: string) => void }) => void;
     onFocusSession?: (sessionId: string) => void;
     onRenameConfirm?: (sessionId: string, name: string) => void;
@@ -19,7 +27,7 @@
 
   let {
     sessions, focusedSessionId,
-    renamingSessionId = null,
+    renamingSessionId = null, terminalConfig,
     onTerminalReady, onFocusSession,
     onRenameConfirm, onRenameCancel,
     onPark, onClose,
@@ -130,6 +138,7 @@
       isFocused={layout.isFocused}
       width={layout.width}
       isRenaming={renamingSessionId === layout.sessionId}
+      {terminalConfig}
       onReady={(api) => onTerminalReady?.(layout.sessionId, api)}
       onclick={() => onFocusSession?.(layout.sessionId)}
       ondragstart={(e) => handleDragStart(layout.sessionId, e)}

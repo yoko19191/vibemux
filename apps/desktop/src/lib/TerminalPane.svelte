@@ -9,13 +9,21 @@
   import ContextMenu from "./ContextMenu.svelte";
   import type { ContextMenuItem } from "./ContextMenu.svelte";
 
+  interface TerminalConfig {
+    fontFamily?: string;
+    fontSize?: number;
+    lineHeight?: number;
+    theme?: Record<string, string>;
+  }
+
   interface Props {
     sessionId: string;
+    terminalConfig?: TerminalConfig;
     onReady?: (api: { writeOutput: (data: string) => void }) => void;
     onRendererType?: (type: 'webgl' | 'canvas') => void;
   }
 
-  let { sessionId, onReady, onRendererType }: Props = $props();
+  let { sessionId, terminalConfig, onReady, onRendererType }: Props = $props();
 
   let containerEl: HTMLDivElement;
   let terminal: Terminal | null = null;
@@ -55,13 +63,14 @@
   onMount(() => {
     terminal = new Terminal({
       scrollback: 10_000,
-      theme: {
+      theme: terminalConfig?.theme ?? {
         background: "#111111",
         foreground: "#d9d4c7",
         cursor: "#ff6b57",
       },
-      fontFamily: "Menlo, Monaco, 'Courier New', monospace",
-      fontSize: 14,
+      fontFamily: terminalConfig?.fontFamily ?? "Menlo, Monaco, 'Courier New', monospace",
+      fontSize: terminalConfig?.fontSize ?? 14,
+      lineHeight: terminalConfig?.lineHeight ?? 1.2,
       allowProposedApi: true,
     });
 
@@ -145,6 +154,17 @@
     onReady?.({
       writeOutput: (data: string) => terminal?.write(data),
     });
+  });
+
+  // Apply config changes to running terminal
+  $effect(() => {
+    if (!terminal || !terminalConfig) return;
+    if (terminalConfig.fontFamily) terminal.options.fontFamily = terminalConfig.fontFamily;
+    if (terminalConfig.fontSize) terminal.options.fontSize = terminalConfig.fontSize;
+    if (terminalConfig.lineHeight) terminal.options.lineHeight = terminalConfig.lineHeight;
+    if (terminalConfig.theme) terminal.options.theme = terminalConfig.theme;
+    // Re-fit after font/size changes
+    fitAddon?.fit();
   });
 
   onDestroy(() => {

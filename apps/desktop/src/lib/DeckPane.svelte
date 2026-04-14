@@ -6,6 +6,13 @@
   import type { ColorToken, ProcessState } from "./types";
   import { invoke } from "@tauri-apps/api/core";
 
+  interface TerminalConfig {
+    fontFamily?: string;
+    fontSize?: number;
+    lineHeight?: number;
+    theme?: Record<string, string>;
+  }
+
   interface Props {
     sessionId: string;
     sessionName: string;
@@ -16,6 +23,7 @@
     isFocused: boolean;
     width: number;
     isRenaming?: boolean;
+    terminalConfig?: TerminalConfig;
     onReady?: (api: { writeOutput: (data: string) => void }) => void;
     onclick?: () => void;
     ondragstart?: (e: DragEvent) => void;
@@ -29,7 +37,7 @@
 
   let {
     sessionId, sessionName, sessionCwd = "", terminalTitle = "", color, processState, isFocused, width,
-    isRenaming = false,
+    isRenaming = false, terminalConfig,
     onReady, onclick, ondragstart, ondragover, ondrop,
     onRenameConfirm, onRenameCancel, onPark, onClose,
   }: Props = $props();
@@ -206,7 +214,7 @@
     {/if}
   </div>
   <div class="terminal-container">
-    <TerminalPane {sessionId} {onReady} onRendererType={(t) => (rendererType = t)} />
+    <TerminalPane {sessionId} {terminalConfig} {onReady} onRendererType={(t) => (rendererType = t)} />
   </div>
 </div>
 
