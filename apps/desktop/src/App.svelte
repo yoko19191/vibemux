@@ -481,6 +481,7 @@
         {focusedSessionId}
         {renamingSessionId}
         {terminalConfig}
+        {prefixKeyMatcher}
         onTerminalReady={handleTerminalReady}
         onFocusSession={handleFocusSession}
         onRenameConfirm={handleRenameConfirm}

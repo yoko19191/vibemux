@@ -4,6 +4,7 @@
   import BusyIndicator from "./BusyIndicator.svelte";
   import type { ContextMenuItem } from "./ContextMenu.svelte";
   import type { ColorToken, ProcessState } from "./types";
+  import type { PrefixKeyMatcher } from "./keymap";
   import { invoke } from "@tauri-apps/api/core";
 
   interface TerminalConfig {
@@ -26,6 +27,7 @@
     zIndex?: number;
     isRenaming?: boolean;
     terminalConfig?: TerminalConfig;
+    prefixKeyMatcher?: PrefixKeyMatcher;
     onReady?: (api: { writeOutput: (data: string) => void }) => void;
     onclick?: () => void;
     ondragstart?: (e: DragEvent) => void;
@@ -40,7 +42,7 @@
   let {
     sessionId, sessionName, sessionCwd = "", terminalTitle = "", color, processState, isFocused, width,
     left = 0, zIndex = 1,
-    isRenaming = false, terminalConfig,
+    isRenaming = false, terminalConfig, prefixKeyMatcher,
     onReady, onclick, ondragstart, ondragover, ondrop,
     onRenameConfirm, onRenameCancel, onPark, onClose,
   }: Props = $props();
@@ -75,10 +77,10 @@
   let borderColor = $derived(colorMap[color] ?? "#666");
   let borderStyle = $derived(isFocused
     ? `2px solid ${borderColor}`
-    : `2px solid ${borderColor}aa`);
+    : `2px solid ${borderColor}`);
   let boxShadow = $derived(isFocused
     ? `0 0 8px 2px ${borderColor}55, 0 6px 20px rgba(0,0,0,0.6)`
-    : `0 2px 8px rgba(0,0,0,0.5)`);
+    : `inset 0 0 12px 0 ${borderColor}20, -1px 0 0 0 rgba(0,0,0,0.8), 1px 0 0 0 rgba(0,0,0,0.8)`);
   let filter = $derived(isFocused ? 'brightness(1)' : 'brightness(0.75)');
   let dragOver = $state(false);
   let renameValue = $state("");
@@ -217,7 +219,7 @@
     {/if}
   </div>
   <div class="terminal-container">
-    <TerminalPane {sessionId} {terminalConfig} {onReady} onRendererType={(t) => (rendererType = t)} />
+    <TerminalPane {sessionId} {terminalConfig} {prefixKeyMatcher} {onReady} onRendererType={(t) => (rendererType = t)} />
   </div>
 </div>
 

@@ -43,19 +43,17 @@ export function calculateDeckLayout(
   const layouts: DeckPaneLayout[] = [];
 
   // Left stack: each pane is full-ish width but shifted far left so only
-  // its RIGHT edge peeks out. Closer to focused = higher z-index.
+  // its RIGHT edge peeks out. Further from focused = higher z-index so
+  // every pane's peek strip is visible (not covered by the one closer to focused).
   leftIds.forEach((id, i) => {
-    const paneWidth = focusedWidth; // same width as focused
-    // Position so that only PEEK_WIDTH of the right edge is visible
-    // The visible strip starts at i * PEEK_WIDTH, so the pane's right edge
-    // aligns to (i + 1) * PEEK_WIDTH → left = (i+1)*PEEK - paneWidth
+    const paneWidth = focusedWidth;
     const paneLeft = (i + 1) * PEEK_WIDTH - paneWidth;
     layouts.push({
       sessionId: id,
       width: paneWidth,
       isFocused: false,
       left: paneLeft,
-      zIndex: i + 1, // further left = lower z
+      zIndex: leftIds.length - i, // further from focused = higher z
     });
   });
 
@@ -69,18 +67,18 @@ export function calculateDeckLayout(
   });
 
   // Right stack: each pane is full-ish width but shifted far right so only
-  // its LEFT edge peeks out. Closer to focused = higher z-index.
+  // its LEFT edge peeks out. Further from focused = higher z-index so
+  // every pane's peek strip is visible.
   rightIds.forEach((id, i) => {
     const paneWidth = focusedWidth;
     const rightEdge = leftPeekTotal + focusedWidth;
-    // The visible strip starts at rightEdge + i * PEEK_WIDTH
     const paneLeft = rightEdge + i * PEEK_WIDTH;
     layouts.push({
       sessionId: id,
       width: paneWidth,
       isFocused: false,
       left: paneLeft,
-      zIndex: rightIds.length - i, // closer to focused = higher z
+      zIndex: i + 1, // further from focused = higher z
     });
   });
 

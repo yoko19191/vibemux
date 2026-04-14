@@ -4,6 +4,7 @@
   import DeckPane from "./DeckPane.svelte";
   import { calculateDeckLayout } from "./deckLayout";
   import type { SessionSnapshot, ColorToken, ProcessState } from "./types";
+  import type { PrefixKeyMatcher } from "./keymap";
 
   interface TerminalConfig {
     fontFamily?: string;
@@ -17,6 +18,7 @@
     focusedSessionId: string | null;
     renamingSessionId?: string | null;
     terminalConfig?: TerminalConfig;
+    prefixKeyMatcher?: PrefixKeyMatcher;
     onTerminalReady?: (sessionId: string, api: { writeOutput: (data: string) => void }) => void;
     onFocusSession?: (sessionId: string) => void;
     onRenameConfirm?: (sessionId: string, name: string) => void;
@@ -27,7 +29,7 @@
 
   let {
     sessions, focusedSessionId,
-    renamingSessionId = null, terminalConfig,
+    renamingSessionId = null, terminalConfig, prefixKeyMatcher,
     onTerminalReady, onFocusSession,
     onRenameConfirm, onRenameCancel,
     onPark, onClose,
@@ -141,6 +143,7 @@
       zIndex={layout.zIndex}
       isRenaming={renamingSessionId === layout.sessionId}
       {terminalConfig}
+      {prefixKeyMatcher}
       onReady={(api) => onTerminalReady?.(layout.sessionId, api)}
       onclick={() => onFocusSession?.(layout.sessionId)}
       ondragstart={(e) => handleDragStart(layout.sessionId, e)}

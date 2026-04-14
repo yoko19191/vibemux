@@ -18,6 +18,7 @@
   let args = $state("");
   let errorMsg = $state<string | null>(null);
   let submitting = $state(false);
+  let nameInput: HTMLInputElement;
 
   function handleCwdInput(e: Event) {
     cwdOverride = (e.target as HTMLInputElement).value;
@@ -25,6 +26,7 @@
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
+      e.preventDefault();
       onCancel?.();
     }
   }
@@ -65,12 +67,14 @@
 <div class="overlay" onclick={onCancel}>
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="panel" onclick={(e) => e.stopPropagation()}>
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <form class="panel" onclick={(e) => e.stopPropagation()} onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
     <h2>New Session</h2>
 
     <label>
       Name
-      <input type="text" bind:value={name} placeholder="session name" />
+      <!-- svelte-ignore a11y_autofocus -->
+      <input type="text" bind:this={nameInput} bind:value={name} placeholder="session name" autofocus />
     </label>
 
     <label>
@@ -106,12 +110,12 @@
     {/if}
 
     <div class="actions">
-      <button class="cancel" onclick={onCancel}>Cancel</button>
-      <button class="submit" onclick={handleSubmit} disabled={submitting}>
+      <button type="button" class="cancel" onclick={onCancel}>Cancel</button>
+      <button type="submit" class="submit" disabled={submitting}>
         {submitting ? "Creating..." : "Create"}
       </button>
     </div>
-  </div>
+  </form>
 </div>
 
 <style>

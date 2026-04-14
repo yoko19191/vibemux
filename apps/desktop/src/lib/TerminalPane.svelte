@@ -6,6 +6,8 @@
   import { WebglAddon } from "@xterm/addon-webgl";
   import { WebLinksAddon } from "@xterm/addon-web-links";
   import { invoke } from "@tauri-apps/api/core";
+  import { matchesPrefixKey } from "./keymap";
+  import type { PrefixKeyMatcher } from "./keymap";
   import ContextMenu from "./ContextMenu.svelte";
   import type { ContextMenuItem } from "./ContextMenu.svelte";
 
@@ -19,11 +21,12 @@
   interface Props {
     sessionId: string;
     terminalConfig?: TerminalConfig;
+    prefixKeyMatcher?: PrefixKeyMatcher;
     onReady?: (api: { writeOutput: (data: string) => void }) => void;
     onRendererType?: (type: 'webgl' | 'canvas') => void;
   }
 
-  let { sessionId, terminalConfig, onReady, onRendererType }: Props = $props();
+  let { sessionId, terminalConfig, prefixKeyMatcher, onReady, onRendererType }: Props = $props();
 
   let containerEl: HTMLDivElement;
   let terminal: Terminal | null = null;
@@ -85,6 +88,14 @@
     terminal.loadAddon(webLinksAddon);
 
     terminal.open(containerEl);
+
+    // Let the prefix key bypass xterm so it bubbles to the window handler
+    terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+      if (prefixKeyMatcher && matchesPrefixKey(e, prefixKeyMatcher)) {
+        return false; // don't process — let it propagate to window
+      }
+      return true;
+    });
 
     // Try WebGL renderer, fall back to canvas
     try {
