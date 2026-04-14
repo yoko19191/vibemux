@@ -24,7 +24,7 @@
     <button
       class="tb-btn"
       onclick={onSearch}
-      title="Search Sessions ({prefixKey}, /)"
+      title="Search Sessions (Cmd+K or {prefixKey}, /)"
       aria-label="Search Sessions"
     >⌕</button>
     <button

@@ -23,6 +23,7 @@
     onFocusSession?: (sessionId: string) => void;
     onRenameConfirm?: (sessionId: string, name: string) => void;
     onRenameCancel?: () => void;
+    onStartRename?: (sessionId: string) => void;
     onPark?: (sessionId: string) => void;
     onClose?: (sessionId: string) => void;
   }
@@ -31,7 +32,7 @@
     sessions, focusedSessionId,
     renamingSessionId = null, terminalConfig, prefixKeyMatcher,
     onTerminalReady, onFocusSession,
-    onRenameConfirm, onRenameCancel,
+    onRenameConfirm, onRenameCancel, onStartRename,
     onPark, onClose,
   }: Props = $props();
 
@@ -151,6 +152,7 @@
       ondrop={(e) => handleDrop(layout.sessionId, e)}
       onRenameConfirm={(name) => onRenameConfirm?.(layout.sessionId, name)}
       onRenameCancel={onRenameCancel}
+      onStartRename={() => onStartRename?.(layout.sessionId)}
       onPark={() => onPark?.(layout.sessionId)}
       onClose={() => onClose?.(layout.sessionId)}
     />

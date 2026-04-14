@@ -240,6 +240,15 @@
       return;
     }
 
+    // CMD+K (Mac) / Ctrl+K global search — works without nav mode
+    const isMac = navigator.platform.toUpperCase().includes("MAC");
+    if ((isMac ? e.metaKey : e.ctrlKey) && e.key === "k") {
+      e.preventDefault();
+      showSearch = true;
+      navMode = false;
+      return;
+    }
+
     if (!navMode) return;
 
     // Navigation mode keybindings
@@ -486,6 +495,7 @@
         onFocusSession={handleFocusSession}
         onRenameConfirm={handleRenameConfirm}
         onRenameCancel={handleRenameCancel}
+        onStartRename={(id) => { renamingSessionId = id; }}
         onPark={(sessionId) => invoke("session_park", { sessionId }).catch(console.error)}
         onClose={closeSessionById}
       />

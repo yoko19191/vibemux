@@ -35,6 +35,7 @@
     ondrop?: (e: DragEvent) => void;
     onRenameConfirm?: (name: string) => void;
     onRenameCancel?: () => void;
+    onStartRename?: () => void;
     onPark?: () => void;
     onClose?: () => void;
   }
@@ -44,7 +45,7 @@
     left = 0, zIndex = 1,
     isRenaming = false, terminalConfig, prefixKeyMatcher,
     onReady, onclick, ondragstart, ondragover, ondrop,
-    onRenameConfirm, onRenameCancel, onPark, onClose,
+    onRenameConfirm, onRenameCancel, onStartRename, onPark, onClose,
   }: Props = $props();
 
   let displayName = $derived(sessionName || terminalTitle);
@@ -133,13 +134,7 @@
   }
 
   function startRename() {
-    // We do this by calling onRenameConfirm with the current name (no-op rename)
-    // Actually we need a dedicated onStartRename callback — but to keep it simple,
-    // we'll just call onRenameConfirm with the current name which triggers the rename flow
-    // The parent sets renamingSessionId which causes isRenaming=true
-    // For now, we'll use a workaround: dispatch a custom event
-    const el = document.querySelector(`[data-session-id="${sessionId}"]`);
-    el?.dispatchEvent(new CustomEvent("startRename", { bubbles: true, detail: { sessionId } }));
+    onStartRename?.();
   }
 
   function getContextMenuItems(): ContextMenuItem[] {
