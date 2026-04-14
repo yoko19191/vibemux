@@ -72,11 +72,12 @@
   let borderColor = $derived(colorMap[color] ?? "#666");
   let borderStyle = $derived(isFocused
     ? `2px solid ${borderColor}`
-    : `1px solid ${borderColor}80`);
+    : `1px solid ${borderColor}35`);
   let boxShadow = $derived(isFocused
-    ? `0 0 0 1px ${borderColor}33, 0 4px 16px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05)`
-    : `0 2px 8px rgba(0,0,0,0.4)`);
-  let opacity = $derived(isFocused ? 1 : 0.8);
+    ? `0 0 8px 2px ${borderColor}55, 0 6px 20px rgba(0,0,0,0.6)`
+    : `0 2px 6px rgba(0,0,0,0.3)`);
+  let opacity = $derived(isFocused ? 1 : 0.7);
+  let filter = $derived(isFocused ? 'brightness(1)' : 'brightness(0.82)');
   let dragOver = $state(false);
   let renameValue = $state("");
   let renameInput: HTMLInputElement | null = $state(null);
@@ -163,7 +164,7 @@
   class="deck-pane"
   class:drag-over={dragOver}
   data-session-id={sessionId}
-  style="width: {width}px; border: {borderStyle}; box-shadow: {boxShadow}; opacity: {opacity};"
+  style="width: {width}px; border: {borderStyle}; box-shadow: {boxShadow}; opacity: {opacity}; filter: {filter};"
   onclick={onclick}
   onmouseenter={() => (isHovered = true)}
   onmouseleave={() => (isHovered = false)}
@@ -232,7 +233,7 @@
     box-sizing: border-box;
     overflow: hidden;
     flex-shrink: 0;
-    transition: width 150ms ease-out, opacity 150ms ease-out;
+    transition: width 150ms ease-out, opacity 150ms ease-out, filter 150ms ease-out;
     display: flex;
     flex-direction: column;
     border-radius: 4px;
