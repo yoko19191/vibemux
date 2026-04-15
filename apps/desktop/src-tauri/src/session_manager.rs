@@ -14,12 +14,12 @@ const MAX_HOT_SESSIONS: usize = 6;
 
 const COLOR_CYCLE: [ColorToken; 8] = [
     ColorToken::Red,
-    ColorToken::Orange,
-    ColorToken::Yellow,
-    ColorToken::Green,
     ColorToken::Cyan,
+    ColorToken::Orange,
     ColorToken::Blue,
+    ColorToken::Yellow,
     ColorToken::Purple,
+    ColorToken::Green,
     ColorToken::Pink,
 ];
 

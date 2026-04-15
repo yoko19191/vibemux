@@ -2,6 +2,10 @@
 name = "vibemux-desktop"
 version = "0.1.0"
 edition = "2021"
+authors = ["CGH <yoko19191@github.com>"]
+description = "A keyboard-first terminal multiplexer for vibe coding"
+homepage = "https://github.com/yoko19191/vibemux"
+repository = "https://github.com/yoko19191/vibemux"
 
 [lib]
 name = "vibemux_desktop_lib"
