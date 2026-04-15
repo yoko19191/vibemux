@@ -130,6 +130,28 @@ impl Default for KeysConfig {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "snake_case", default)]
+pub struct AiConfig {
+    pub enabled: bool,
+    pub base_url: String,
+    pub api_key: String,
+    pub model: String,
+    pub system_prompt: String,
+}
+
+impl Default for AiConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            base_url: "https://api.openai.com".to_string(),
+            api_key: String::new(),
+            model: String::new(),
+            system_prompt: "You are a helpful assistant inside Vibemux, a terminal multiplexer. Keep answers concise and practical.".to_string(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(rename_all = "snake_case", default)]
 pub struct UserConfig {
@@ -138,6 +160,7 @@ pub struct UserConfig {
     pub layout: LayoutConfig,
     pub shell: ShellConfig,
     pub keys: KeysConfig,
+    pub ai: AiConfig,
     pub onboarding_completed: bool,
 }
 
@@ -176,13 +199,19 @@ pub fn load_config_with_error() -> (UserConfig, Option<String>) {
         Ok(content) => match toml::from_str::<UserConfig>(&content) {
             Ok(cfg) => (cfg, None),
             Err(e) => {
-                let msg = format!("Config file at {:?} is corrupted: {}. Using defaults.", path, e);
+                let msg = format!(
+                    "Config file at {:?} is corrupted: {}. Using defaults.",
+                    path, e
+                );
                 eprintln!("Warning: {}", msg);
                 (UserConfig::default(), Some(msg))
             }
         },
         Err(e) => {
-            let msg = format!("Could not read config at {:?}: {}. Using defaults.", path, e);
+            let msg = format!(
+                "Could not read config at {:?}: {}. Using defaults.",
+                path, e
+            );
             eprintln!("Warning: {}", msg);
             (UserConfig::default(), Some(msg))
         }
@@ -199,14 +228,13 @@ pub fn save_config(config: &UserConfig) -> Result<(), String> {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("failed to create config dir: {}", e))?;
     }
-    let content = toml::to_string_pretty(config)
-        .map_err(|e| format!("failed to serialize config: {}", e))?;
+    let content =
+        toml::to_string_pretty(config).map_err(|e| format!("failed to serialize config: {}", e))?;
 
     // Atomic write: write to temp file then rename
     let tmp_path = path.with_extension("toml.tmp");
     std::fs::write(&tmp_path, &content)
         .map_err(|e| format!("failed to write temp config: {}", e))?;
-    std::fs::rename(&tmp_path, &path)
-        .map_err(|e| format!("failed to rename config: {}", e))?;
+    std::fs::rename(&tmp_path, &path).map_err(|e| format!("failed to rename config: {}", e))?;
     Ok(())
 }

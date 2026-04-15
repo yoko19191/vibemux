@@ -29,11 +29,20 @@
     prefix: string;
   }
 
+  interface AiConfig {
+    enabled: boolean;
+    base_url: string;
+    api_key: string;
+    model: string;
+    system_prompt: string;
+  }
+
   interface UserConfig {
     terminal: TerminalConfig;
     theme: ThemeConfig;
     layout: LayoutConfig;
     keys: KeysConfig;
+    ai: AiConfig;
   }
 
   interface Props {
@@ -44,9 +53,12 @@
   let { onClose, onConfigChange }: Props = $props();
 
   let config: UserConfig | null = $state(null);
-  let activeTab: "terminal" | "theme" | "layout" | "keys" = $state("terminal");
+  let activeTab: "terminal" | "theme" | "layout" | "keys" | "ai" = $state("terminal");
   let saving = $state(false);
   let systemFonts: string[] = $state([]);
+  let aiModels: string[] = $state([]);
+  let aiModelsLoading = $state(false);
+  let aiModelsError: string | null = $state(null);
 
   const PRESET_PREFIX_KEYS = [
     { label: "Ctrl+B (tmux style)", value: "ctrl+b" },
@@ -79,6 +91,22 @@
       config = await invoke<UserConfig>("config_get");
     } catch (e) {
       console.error("Failed to load config:", e);
+    }
+  }
+
+  async function loadAiModels() {
+    if (!config?.ai?.base_url || !config?.ai?.api_key) {
+      aiModelsError = "Add a Base URL and API Key first.";
+      return;
+    }
+    aiModelsLoading = true;
+    aiModelsError = null;
+    try {
+      aiModels = await invoke<string[]>("ai_list_models");
+    } catch (e) {
+      aiModelsError = String(e);
+    } finally {
+      aiModelsLoading = false;
     }
   }
 
@@ -131,6 +159,10 @@
     }
   }
 
+  function handleAiChange(field: keyof AiConfig, value: string | boolean) {
+    applyUpdate({ ai: { [field]: value } });
+  }
+
   loadConfig();
   loadFonts();
 </script>
@@ -149,6 +181,7 @@
       <button class="tab" class:active={activeTab === "theme"} onclick={() => (activeTab = "theme")}>Theme</button>
       <button class="tab" class:active={activeTab === "layout"} onclick={() => (activeTab = "layout")}>Layout</button>
       <button class="tab" class:active={activeTab === "keys"} onclick={() => (activeTab = "keys")}>Keys</button>
+      <button class="tab" class:active={activeTab === "ai"} onclick={() => (activeTab = "ai")}>AI</button>
     </div>
 
     {#if config}
@@ -302,6 +335,67 @@
             </div>
           {/if}
         </div>
+      {:else if activeTab === "ai"}
+        <div class="section">
+          <label class="field">
+            <span>Enable AI</span>
+            <input
+              class="toggle"
+              type="checkbox"
+              checked={config.ai.enabled}
+              onchange={(e) => handleAiChange("enabled", (e.target as HTMLInputElement).checked)}
+            />
+          </label>
+          <label class="field">
+            <span>Base URL</span>
+            <input
+              type="text"
+              placeholder="https://api.openai.com"
+              value={config.ai.base_url}
+              onchange={(e) => handleAiChange("base_url", (e.target as HTMLInputElement).value)}
+            />
+          </label>
+          <label class="field">
+            <span>API Key</span>
+            <input
+              type="password"
+              placeholder="sk-..."
+              value={config.ai.api_key}
+              onchange={(e) => handleAiChange("api_key", (e.target as HTMLInputElement).value)}
+            />
+          </label>
+          <div class="field">
+            <span>Model</span>
+            <div class="model-field">
+              <select
+                value={config.ai.model}
+                onchange={(e) => handleAiChange("model", (e.target as HTMLSelectElement).value)}
+              >
+                <option value="">Select a model</option>
+                {#each aiModels as model}
+                  <option value={model} selected={model === config.ai.model}>{model}</option>
+                {/each}
+                {#if config.ai.model && !aiModels.includes(config.ai.model)}
+                  <option value={config.ai.model} selected>{config.ai.model}</option>
+                {/if}
+              </select>
+              <button class="secondary-btn" disabled={aiModelsLoading} onclick={loadAiModels}>
+                {aiModelsLoading ? "Loading..." : "Refresh models"}
+              </button>
+            </div>
+          </div>
+          {#if aiModelsError}
+            <div class="inline-error">{aiModelsError}</div>
+          {/if}
+          <label class="field prompt-field">
+            <span>System Prompt</span>
+            <textarea
+              value={config.ai.system_prompt}
+              rows="6"
+              onchange={(e) => handleAiChange("system_prompt", (e.target as HTMLTextAreaElement).value)}
+            ></textarea>
+          </label>
+        </div>
       {/if}
     {:else}
       <div class="loading">Loading...</div>
@@ -403,8 +497,10 @@
   }
 
   .field input[type="text"],
+  .field input[type="password"],
   .field input[type="number"],
-  .field select {
+  .field select,
+  .field textarea {
     flex: 1;
     background: #111;
     border: 1px solid #333;
@@ -415,11 +511,68 @@
     font-family: inherit;
   }
 
+  .field textarea {
+    min-height: 90px;
+    resize: vertical;
+    line-height: 1.35;
+  }
+
+  .prompt-field {
+    align-items: flex-start;
+  }
+
+  .toggle {
+    width: 34px;
+    height: 18px;
+    accent-color: #3b82f6;
+  }
+
   .font-field {
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
     flex: 1;
+  }
+
+  .model-field {
+    display: flex;
+    flex: 1;
+    gap: 0.4rem;
+  }
+
+  .model-field select {
+    min-width: 0;
+  }
+
+  .secondary-btn {
+    background: #222;
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
+    color: #d9d4c7;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.72rem;
+    padding: 0.25rem 0.5rem;
+    white-space: nowrap;
+  }
+
+  .secondary-btn:disabled {
+    color: #666;
+    cursor: default;
+  }
+
+  .secondary-btn:not(:disabled):hover {
+    border-color: #555;
+  }
+
+  .inline-error {
+    background: #ef444418;
+    border: 1px solid #ef444440;
+    border-radius: 5px;
+    color: #fca5a5;
+    font-size: 0.72rem;
+    line-height: 1.35;
+    padding: 0.45rem 0.55rem;
   }
 
   .font-field select,

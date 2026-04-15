@@ -69,7 +69,10 @@ pub async fn session_create(
     state: State<'_, AppState>,
     payload: CreateSessionPayload,
 ) -> Result<SessionSnapshot, String> {
-    eprintln!("[vibemux] session_create called: name={}, cwd={}, type={}", payload.name, payload.cwd, payload.command_type);
+    eprintln!(
+        "[vibemux] session_create called: name={}, cwd={}, type={}",
+        payload.name, payload.cwd, payload.command_type
+    );
     let command = match payload.command_type.as_str() {
         "shell" => {
             let shell = payload
@@ -85,7 +88,12 @@ pub async fn session_create(
             let args = payload.args.unwrap_or_default();
             SessionCommand::Command { program, args }
         }
-        other => return Err(format!("unknown command type: '{}'. Use 'shell' or 'command'", other)),
+        other => {
+            return Err(format!(
+                "unknown command type: '{}'. Use 'shell' or 'command'",
+                other
+            ))
+        }
     };
 
     eprintln!("[vibemux] acquiring lock...");
@@ -146,7 +154,11 @@ pub async fn workspace_get_snapshot(
         id: ws.id.to_string(),
         name: ws.name.clone(),
         hot_session_ids: ws.hot_session_ids.iter().map(|id| id.to_string()).collect(),
-        warm_session_ids: ws.warm_session_ids.iter().map(|id| id.to_string()).collect(),
+        warm_session_ids: ws
+            .warm_session_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect(),
         focused_session_id: ws.focused_session_id.map(|id| id.to_string()),
         layout: ws.layout.clone(),
         sessions,
@@ -154,10 +166,7 @@ pub async fn workspace_get_snapshot(
 }
 
 #[tauri::command]
-pub async fn session_focus(
-    state: State<'_, AppState>,
-    session_id: String,
-) -> Result<(), String> {
+pub async fn session_focus(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
     let uuid = Uuid::parse_str(&session_id)
         .map_err(|_| format!("invalid session id: '{}'", session_id))?;
     let mut manager = state.lock().await;
@@ -165,10 +174,7 @@ pub async fn session_focus(
 }
 
 #[tauri::command]
-pub async fn session_close(
-    state: State<'_, AppState>,
-    session_id: String,
-) -> Result<(), String> {
+pub async fn session_close(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
     let uuid = Uuid::parse_str(&session_id)
         .map_err(|_| format!("invalid session id: '{}'", session_id))?;
     let mut manager = state.lock().await;
@@ -176,10 +182,7 @@ pub async fn session_close(
 }
 
 #[tauri::command]
-pub async fn session_kill(
-    state: State<'_, AppState>,
-    session_id: String,
-) -> Result<(), String> {
+pub async fn session_kill(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
     let uuid = Uuid::parse_str(&session_id)
         .map_err(|_| format!("invalid session id: '{}'", session_id))?;
     let mut manager = state.lock().await;
@@ -211,10 +214,7 @@ pub async fn session_set_color(
 }
 
 #[tauri::command]
-pub async fn session_recall(
-    state: State<'_, AppState>,
-    session_id: String,
-) -> Result<(), String> {
+pub async fn session_recall(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
     let uuid = Uuid::parse_str(&session_id)
         .map_err(|_| format!("invalid session id: '{}'", session_id))?;
     let mut manager = state.lock().await;
@@ -222,10 +222,7 @@ pub async fn session_recall(
 }
 
 #[tauri::command]
-pub async fn session_park(
-    state: State<'_, AppState>,
-    session_id: String,
-) -> Result<(), String> {
+pub async fn session_park(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
     let uuid = Uuid::parse_str(&session_id)
         .map_err(|_| format!("invalid session id: '{}'", session_id))?;
     let mut manager = state.lock().await;
@@ -258,11 +255,11 @@ pub fn config_update(
 ) -> Result<UserConfig, String> {
     let mut cfg = config_state.lock().map_err(|e| e.to_string())?;
     // Merge: serialize current, merge JSON, deserialize back
-    let mut current_json = serde_json::to_value(&*cfg)
-        .map_err(|e| format!("serialize error: {}", e))?;
+    let mut current_json =
+        serde_json::to_value(&*cfg).map_err(|e| format!("serialize error: {}", e))?;
     merge_json(&mut current_json, &update);
-    let new_cfg: UserConfig = serde_json::from_value(current_json)
-        .map_err(|e| format!("deserialize error: {}", e))?;
+    let new_cfg: UserConfig =
+        serde_json::from_value(current_json).map_err(|e| format!("deserialize error: {}", e))?;
     *cfg = new_cfg.clone();
     drop(cfg);
     save_config(&new_cfg)?;

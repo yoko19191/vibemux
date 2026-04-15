@@ -1,3 +1,4 @@
+pub mod ai;
 pub mod commands;
 pub mod config;
 pub mod events;
@@ -9,6 +10,7 @@ pub mod session_manager;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 
+use ai::{AiState, AiStore};
 use commands::AppState;
 use config::{load_config_with_error, ConfigErrorState, ConfigState};
 use session_manager::SessionManager;
@@ -21,11 +23,13 @@ pub fn run() {
     let (cfg, cfg_error) = load_config_with_error();
     let config_state: ConfigState = Arc::new(std::sync::Mutex::new(cfg));
     let config_error_state: ConfigErrorState = Arc::new(std::sync::Mutex::new(cfg_error));
+    let ai_state: AiState = Arc::new(Mutex::new(AiStore::load()));
 
     tauri::Builder::default()
         .manage(state)
         .manage(config_state)
         .manage(config_error_state)
+        .manage(ai_state)
         .invoke_handler(tauri::generate_handler![
             commands::session_create,
             commands::session_write,
@@ -46,6 +50,11 @@ pub fn run() {
             commands::session_set_title,
             commands::detect_shells,
             commands::list_monospace_fonts,
+            ai::ai_list_models,
+            ai::ai_list_threads,
+            ai::ai_get_thread,
+            ai::ai_send_message,
+            ai::ai_get_focused_context,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

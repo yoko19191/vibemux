@@ -1,17 +1,51 @@
 <script lang="ts">
-  import type { SessionSnapshot } from "./types";
+  import { onDestroy } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
+  import { listen } from "@tauri-apps/api/event";
+  import MarkdownMessage from "./MarkdownMessage.svelte";
+  import type { AiConfig, AiEvent, AiMessage, AiThread, AiThreadSummary, SessionSnapshot } from "./types";
+
+  interface UserConfig {
+    ai: AiConfig;
+  }
 
   interface Props {
     sessions: SessionSnapshot[];
+    query: string;
+    onQueryChange: (query: string) => void;
     onSelect: (sessionId: string, thermal: "Hot" | "Warm") => void;
     onClose: () => void;
   }
 
-  let { sessions, onSelect, onClose }: Props = $props();
+  type PaletteItem =
+    | { type: "ask-ai"; disabled: boolean; reason: string }
+    | { type: "session"; session: SessionSnapshot }
+    | { type: "thread"; thread: AiThreadSummary };
+
+  let { sessions, query: initialQuery, onQueryChange, onSelect, onClose }: Props = $props();
 
   let query = $state("");
   let selectedIdx = $state(0);
   let inputEl: HTMLInputElement | null = $state(null);
+  let mode: "search" | "chat" = $state("search");
+  let aiConfig = $state<AiConfig | null>(null);
+  let threads: AiThreadSummary[] = $state([]);
+  let activeThread: AiThread | null = $state(null);
+  let includeFocusedContext = $state(false);
+  let aiError: string | null = $state(null);
+  let sending = $state(false);
+  let activeRequestId: string | null = $state(null);
+  let unlistenAi: (() => void) | null = null;
+  let pendingDeltas = new Map<string, string>();
+  let pendingDone = new Set<string>();
+  let pendingErrors = new Map<string, string>();
+
+  function getInitialQuery() {
+    return initialQuery;
+  }
+
+  query = getInitialQuery();
+  mode = getInitialQuery().startsWith("#") ? "chat" : "search";
 
   const colorMap: Record<string, string> = {
     Red: "#ef4444",
@@ -30,8 +64,21 @@
     Cold: "cold",
   };
 
-  let filtered = $derived.by(() => {
-    const q = query.toLowerCase().trim();
+  let aiReady = $derived.by(() => {
+    const cfg = aiConfig;
+    return Boolean(cfg && cfg.enabled && cfg.base_url && cfg.api_key && cfg.model);
+  });
+  let aiUnavailableReason = $derived.by(() => {
+    if (!aiConfig) return "Loading AI settings";
+    if (!aiConfig.enabled) return "AI is disabled in Settings";
+    if (!aiConfig.base_url) return "Add an AI Base URL in Settings";
+    if (!aiConfig.api_key) return "Add an AI API Key in Settings";
+    if (!aiConfig.model) return "Select an AI model in Settings";
+    return "";
+  });
+
+  let filteredSessions = $derived.by(() => {
+    const q = normalQuery();
     if (!q) return sessions;
     return sessions.filter(
       (s) =>
@@ -41,33 +88,249 @@
     );
   });
 
+  let filteredThreads = $derived.by(() => {
+    const q = normalQuery();
+    if (!q) return threads;
+    return threads.filter(
+      (thread) =>
+        thread.title.toLowerCase().includes(q) ||
+        thread.lastMessagePreview.toLowerCase().includes(q)
+    );
+  });
+
+  let paletteItems = $derived.by(() => [
+    { type: "ask-ai", disabled: !aiReady, reason: aiUnavailableReason } as PaletteItem,
+    ...filteredSessions.map((session) => ({ type: "session", session }) as PaletteItem),
+    ...filteredThreads.map((thread) => ({ type: "thread", thread }) as PaletteItem),
+  ]);
+
   $effect(() => {
-    // Reset selection when filter changes
-    selectedIdx = 0;
+    onQueryChange(query);
+    if (query.startsWith("#")) {
+      mode = "chat";
+    }
   });
 
   $effect(() => {
-    // Focus input on mount
-    setTimeout(() => inputEl?.focus(), 0);
+    query;
+    filteredSessions.length;
+    filteredThreads.length;
+    selectedIdx = 0;
   });
+
+  setTimeout(() => inputEl?.focus(), 0);
+  loadInitialData();
+  listen<AiEvent>("ai-event", (event) => handleAiEvent(event.payload)).then((unlisten) => {
+    unlistenAi = unlisten;
+  });
+
+  onDestroy(() => {
+    unlistenAi?.();
+  });
+
+  async function loadInitialData() {
+    await Promise.all([loadConfig(), loadThreads()]);
+  }
+
+  async function loadConfig() {
+    try {
+      const cfg = await invoke<UserConfig>("config_get");
+      aiConfig = cfg.ai;
+    } catch (e) {
+      aiError = String(e);
+    }
+  }
+
+  async function loadThreads() {
+    try {
+      threads = await invoke<AiThreadSummary[]>("ai_list_threads");
+    } catch (e) {
+      aiError = String(e);
+    }
+  }
+
+  function normalQuery(): string {
+    return query.startsWith("#") ? "" : query.toLowerCase().trim();
+  }
+
+  function aiInstruction(): string {
+    return query.startsWith("#") ? query.slice(1).trim() : query.trim();
+  }
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
       e.preventDefault();
-      onClose();
+      if (mode === "chat") {
+        mode = "search";
+        activeThread = null;
+        query = "";
+        aiError = null;
+      } else {
+        onClose();
+      }
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
-      selectedIdx = Math.min(selectedIdx + 1, filtered.length - 1);
+      selectedIdx = Math.min(selectedIdx + 1, Math.max(paletteItems.length - 1, 0));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       selectedIdx = Math.max(selectedIdx - 1, 0);
     } else if (e.key === "Enter") {
       e.preventDefault();
-      const session = filtered[selectedIdx];
-      if (session) {
-        onSelect(session.id, session.thermalState as "Hot" | "Warm");
+      if (mode === "chat" || query.startsWith("#")) {
+        sendAiMessage();
+      } else {
+        activatePaletteItem(paletteItems[selectedIdx]);
       }
     }
+  }
+
+  function activatePaletteItem(item: PaletteItem | undefined) {
+    if (!item) return;
+    if (item.type === "ask-ai") {
+      if (item.disabled) {
+        aiError = item.reason;
+        return;
+      }
+      activeThread = null;
+      query = "#";
+      mode = "chat";
+      setTimeout(() => inputEl?.focus(), 0);
+    } else if (item.type === "session") {
+      onSelect(item.session.id, item.session.thermalState as "Hot" | "Warm");
+    } else if (item.type === "thread") {
+      openThread(item.thread.id);
+    }
+  }
+
+  async function openThread(threadId: string) {
+    try {
+      activeThread = await invoke<AiThread>("ai_get_thread", { threadId });
+      query = "#";
+      mode = "chat";
+      aiError = null;
+      setTimeout(() => inputEl?.focus(), 0);
+    } catch (e) {
+      aiError = String(e);
+    }
+  }
+
+  async function sendAiMessage() {
+    aiError = null;
+    if (!aiReady) {
+      aiError = aiUnavailableReason;
+      return;
+    }
+    const content = aiInstruction();
+    if (!content || sending) return;
+    sending = true;
+    try {
+      const result = await invoke<{ requestId: string; threadId: string; assistantMessageId: string }>("ai_send_message", {
+        payload: {
+          threadId: activeThread?.id ?? null,
+          content,
+          includeFocusedContext,
+        },
+      });
+      activeRequestId = result.requestId;
+      appendOptimisticMessages(result.threadId, result.assistantMessageId, content);
+      query = "#";
+      includeFocusedContext = false;
+      await loadThreads();
+    } catch (e) {
+      aiError = String(e);
+      sending = false;
+    }
+  }
+
+  function appendOptimisticMessages(threadId: string, assistantMessageId: string, content: string) {
+    const now = new Date().toISOString();
+    const userMessage: AiMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content,
+      createdAt: now,
+      metadata: { includeFocusedContext },
+    };
+    const pendingContent = pendingDeltas.get(assistantMessageId) ?? "";
+    const pendingError = pendingErrors.get(assistantMessageId);
+    const assistantMessage: AiMessage = {
+      id: assistantMessageId,
+      role: "assistant",
+      content: pendingError ? `Error: ${pendingError}` : pendingContent,
+      createdAt: now,
+      metadata: null,
+    };
+    pendingDeltas.delete(assistantMessageId);
+    pendingErrors.delete(assistantMessageId);
+
+    if (activeThread?.id === threadId) {
+      activeThread = {
+        ...activeThread,
+        updatedAt: now,
+        messages: [...activeThread.messages, userMessage, assistantMessage],
+      };
+    } else {
+      activeThread = {
+        id: threadId,
+        title: titleFrom(content),
+        createdAt: now,
+        updatedAt: now,
+        messages: [userMessage, assistantMessage],
+      };
+    }
+    if (pendingDone.has(assistantMessageId) || pendingError) {
+      sending = false;
+      activeRequestId = null;
+      pendingDone.delete(assistantMessageId);
+    }
+  }
+
+  function handleAiEvent(event: AiEvent) {
+    if (!activeThread || event.threadId !== activeThread.id) {
+      if (event.type === "delta") {
+        pendingDeltas.set(
+          event.assistantMessageId,
+          (pendingDeltas.get(event.assistantMessageId) ?? "") + event.content
+        );
+      } else if (event.type === "done") {
+        pendingDone.add(event.assistantMessageId);
+      } else if (event.type === "error") {
+        pendingErrors.set(event.assistantMessageId, event.message);
+      }
+      return;
+    }
+    if (event.type === "delta") {
+      activeThread = {
+        ...activeThread,
+        messages: activeThread.messages.map((message) =>
+          message.id === event.assistantMessageId
+            ? { ...message, content: message.content + event.content }
+            : message
+        ),
+      };
+    } else if (event.type === "done") {
+      sending = false;
+      activeRequestId = null;
+      loadThreads();
+    } else if (event.type === "error") {
+      sending = false;
+      activeRequestId = null;
+      aiError = event.message;
+      activeThread = {
+        ...activeThread,
+        messages: activeThread.messages.map((message) =>
+          message.id === event.assistantMessageId && !message.content
+            ? { ...message, content: `Error: ${event.message}` }
+            : message
+        ),
+      };
+      loadThreads();
+    }
+  }
+
+  function titleFrom(content: string): string {
+    const title = content.trim().replace(/\s+/g, " ");
+    return title.length > 48 ? `${title.slice(0, 48)}...` : title || "New chat";
   }
 
   function shortCwd(cwd: string): string {
@@ -85,41 +348,112 @@
 <div class="overlay" onclick={onClose}>
   <div class="panel" onclick={(e) => e.stopPropagation()}>
     <div class="search-row">
-      <span class="search-icon">⌕</span>
+      <span class="search-icon">{mode === "chat" ? "#" : "⌕"}</span>
       <input
         class="search-input"
         bind:this={inputEl}
         bind:value={query}
-        placeholder="Search sessions..."
+        placeholder={mode === "chat" ? "# Ask AI..." : "Search sessions..."}
         onkeydown={handleKeydown}
       />
     </div>
 
-    {#if filtered.length === 0}
-      <div class="empty">No sessions match</div>
+    {#if mode === "chat"}
+      <div class="chat-toolbar">
+        <button
+          class="context-toggle"
+          class:active={includeFocusedContext}
+          disabled={sending}
+          onclick={() => (includeFocusedContext = !includeFocusedContext)}
+        >
+          {includeFocusedContext ? "Focused terminal attached" : "Attach focused terminal"}
+        </button>
+        {#if activeRequestId}
+          <span class="streaming-dot">Streaming</span>
+        {/if}
+      </div>
+
+      <div class="chat-body">
+        {#if activeThread}
+          {#each activeThread.messages as message (message.id)}
+            <div class="message" class:user={message.role === "user"} class:assistant={message.role === "assistant"}>
+              <div class="message-role">{message.role === "user" ? "You" : "AI"}</div>
+              <MarkdownMessage content={message.content || (message.role === "assistant" && sending ? "Thinking..." : "")} />
+            </div>
+          {/each}
+        {:else}
+          <div class="chat-empty">Type after # and press Enter.</div>
+        {/if}
+        {#if aiError}
+          <div class="ai-error">{aiError}</div>
+        {/if}
+      </div>
     {:else}
-      <ul class="results">
-        {#each filtered as session, i (session.id)}
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-          <li
-            class="result-item"
-            class:selected={i === selectedIdx}
-            onclick={() => onSelect(session.id, session.thermalState as "Hot" | "Warm")}
-          >
-            <span class="color-dot" style="background: {colorMap[session.color] ?? '#666'};"></span>
-            <span class="session-name">{session.name}</span>
-            <span class="thermal-badge" class:warm={session.thermalState === 'Warm'}>{thermalLabel[session.thermalState] ?? session.thermalState}</span>
-            <span class="cwd">{shortCwd(session.cwd)}</span>
-          </li>
+      <div class="results">
+        {#each paletteItems as item, i}
+          {#if item.type === "ask-ai"}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="result-item action-item"
+              class:selected={i === selectedIdx}
+              class:disabled={item.disabled}
+              onclick={() => activatePaletteItem(item)}
+            >
+              <span class="action-mark">#</span>
+              <span class="session-name">Ask AI</span>
+              <span class="cwd">{item.disabled ? item.reason : "Start an AI instruction"}</span>
+            </div>
+          {:else if item.type === "session"}
+            {@const session = item.session}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="result-item"
+              class:selected={i === selectedIdx}
+              onclick={() => onSelect(session.id, session.thermalState as "Hot" | "Warm")}
+            >
+              <span class="color-dot" style="background: {colorMap[session.color] ?? '#666'};"></span>
+              <span class="session-name">{session.name}</span>
+              <span class="thermal-badge" class:warm={session.thermalState === 'Warm'}>{thermalLabel[session.thermalState] ?? session.thermalState}</span>
+              <span class="cwd">{shortCwd(session.cwd)}</span>
+            </div>
+          {/if}
         {/each}
-      </ul>
+
+        {#if filteredThreads.length > 0}
+          <div class="section-label">Chat Threads</div>
+          {#each filteredThreads as thread}
+            {@const itemIndex = paletteItems.findIndex((item) => item.type === "thread" && item.thread.id === thread.id)}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="result-item thread-item"
+              class:selected={itemIndex === selectedIdx}
+              onclick={() => openThread(thread.id)}
+            >
+              <span class="action-mark">#</span>
+              <span class="thread-copy">
+                <span class="thread-title">{thread.title}</span>
+                <span class="thread-preview">{thread.lastMessagePreview}</span>
+              </span>
+            </div>
+          {/each}
+        {/if}
+
+        {#if filteredSessions.length === 0 && filteredThreads.length === 0}
+          <div class="empty">No sessions or chats match</div>
+        {/if}
+        {#if aiError}
+          <div class="ai-error">{aiError}</div>
+        {/if}
+      </div>
     {/if}
 
     <div class="footer">
       <span>↑↓ navigate</span>
-      <span>↵ select</span>
-      <span>esc close</span>
+      <span>↵ select/send</span>
+      <span>esc {mode === "chat" ? "search" : "close"}</span>
     </div>
   </div>
 </div>
@@ -140,11 +474,15 @@
     background: #1a1a1a;
     border: 1px solid #333;
     border-radius: 8px;
-    width: 520px;
-    max-width: 90vw;
+    width: 560px;
+    height: 520px;
+    max-width: 92vw;
+    max-height: 75vh;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
     overflow: hidden;
     font-family: system-ui, -apple-system, sans-serif;
+    display: flex;
+    flex-direction: column;
   }
 
   .search-row {
@@ -153,11 +491,14 @@
     padding: 0.6rem 0.75rem;
     border-bottom: 1px solid #2a2a2a;
     gap: 0.5rem;
+    flex-shrink: 0;
   }
 
   .search-icon {
     color: #666;
     font-size: 1rem;
+    width: 1rem;
+    text-align: center;
   }
 
   .search-input {
@@ -174,12 +515,15 @@
     color: #555;
   }
 
-  .results {
-    list-style: none;
-    margin: 0;
-    padding: 0.25rem 0;
-    max-height: 320px;
+  .results,
+  .chat-body {
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
+  }
+
+  .results {
+    padding: 0.25rem 0;
   }
 
   .result-item {
@@ -194,6 +538,28 @@
   .result-item:hover,
   .result-item.selected {
     background: #2a2a2a;
+  }
+
+  .result-item.disabled {
+    cursor: default;
+    opacity: 0.55;
+  }
+
+  .result-item.disabled:hover {
+    background: transparent;
+  }
+
+  .action-mark {
+    width: 18px;
+    height: 18px;
+    border: 1px solid #3b82f680;
+    border-radius: 4px;
+    color: #93c5fd;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 0.75rem;
   }
 
   .color-dot {
@@ -227,7 +593,7 @@
   }
 
   .cwd {
-    color: #555;
+    color: #666;
     font-size: 0.75rem;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -236,12 +602,128 @@
     min-width: 0;
   }
 
+  .section-label {
+    color: #555;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    padding: 0.55rem 0.75rem 0.25rem;
+    text-transform: uppercase;
+  }
+
+  .thread-item {
+    align-items: flex-start;
+  }
+
+  .thread-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+  }
+
+  .thread-title {
+    color: #d9d4c7;
+    font-size: 0.8rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .thread-preview {
+    color: #666;
+    font-size: 0.72rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .chat-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #272727;
+    padding: 0.45rem 0.75rem;
+    flex-shrink: 0;
+  }
+
+  .context-toggle {
+    background: #111;
+    border: 1px solid #333;
+    border-radius: 5px;
+    color: #999;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.72rem;
+    padding: 0.25rem 0.5rem;
+  }
+
+  .context-toggle.active {
+    border-color: #3b82f6;
+    color: #d9d4c7;
+    background: #3b82f620;
+  }
+
+  .context-toggle:disabled {
+    cursor: default;
+    opacity: 0.55;
+  }
+
+  .streaming-dot {
+    color: #60a5fa;
+    font-size: 0.72rem;
+  }
+
+  .chat-body {
+    padding: 0.7rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+  }
+
+  .message {
+    border-left: 2px solid #333;
+    padding-left: 0.65rem;
+  }
+
+  .message.user {
+    border-left-color: #eab308;
+  }
+
+  .message.assistant {
+    border-left-color: #3b82f6;
+  }
+
+  .message-role {
+    color: #777;
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.25rem;
+    text-transform: uppercase;
+  }
+
+  .chat-empty,
   .empty {
     padding: 1.5rem;
     text-align: center;
     color: #555;
     font-size: 0.85rem;
-    font-family: system-ui, -apple-system, sans-serif;
+  }
+
+  .ai-error {
+    background: #ef444418;
+    border: 1px solid #ef444440;
+    border-radius: 5px;
+    color: #fca5a5;
+    font-size: 0.74rem;
+    line-height: 1.35;
+    margin: 0.4rem 0.75rem;
+    padding: 0.45rem 0.55rem;
+  }
+
+  .chat-body .ai-error {
+    margin: 0;
   }
 
   .footer {
@@ -251,6 +733,6 @@
     border-top: 1px solid #2a2a2a;
     color: #444;
     font-size: 0.7rem;
-    font-family: system-ui, -apple-system, sans-serif;
+    flex-shrink: 0;
   }
 </style>

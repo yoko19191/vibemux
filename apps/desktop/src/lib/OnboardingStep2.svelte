@@ -56,8 +56,9 @@
     <span class="dot active"></span>
     <span class="dot"></span>
     <span class="dot"></span>
+    <span class="dot"></span>
   </div>
-  <span class="step-label">Step 2 of 4</span>
+  <span class="step-label">Step 2 of 5</span>
   <div class="footer-actions">
     <button class="back-btn" onclick={onBack}>← Back</button>
     <button class="skip-link" onclick={onSkip}>Skip</button>

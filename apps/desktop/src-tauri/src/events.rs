@@ -12,9 +12,7 @@ use crate::session_manager::MuxEvent;
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum FrontendEvent {
     #[serde(rename_all = "camelCase")]
-    SessionCreated {
-        session: SessionSnapshot,
-    },
+    SessionCreated { session: SessionSnapshot },
     #[serde(rename_all = "camelCase")]
     SessionOutput {
         session_id: String,
@@ -27,13 +25,9 @@ pub enum FrontendEvent {
         exit_code: Option<i32>,
     },
     #[serde(rename_all = "camelCase")]
-    SessionUpdated {
-        session_id: String,
-    },
+    SessionUpdated { session_id: String },
     #[serde(rename_all = "camelCase")]
-    SessionParked {
-        session_id: String,
-    },
+    SessionParked { session_id: String },
     #[serde(rename_all = "camelCase")]
     ReplayStart {
         session_id: String,
@@ -47,9 +41,7 @@ pub enum FrontendEvent {
         seq: u64,
     },
     #[serde(rename_all = "camelCase")]
-    ReplayEnd {
-        session_id: String,
-    },
+    ReplayEnd { session_id: String },
     #[serde(rename_all = "camelCase")]
     AttentionChanged {
         session_id: String,

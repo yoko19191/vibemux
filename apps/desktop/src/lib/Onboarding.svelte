@@ -2,6 +2,7 @@
   import OnboardingStep1 from "./OnboardingStep1.svelte";
   import OnboardingStep2 from "./OnboardingStep2.svelte";
   import OnboardingStep3 from "./OnboardingStep3.svelte";
+  import OnboardingStep4Ai from "./OnboardingStep4Ai.svelte";
   import OnboardingStep4 from "./OnboardingStep4.svelte";
 
   interface Props {
@@ -39,6 +40,14 @@
     step = 4;
   }
 
+  function handleStep4AiNext() {
+    step = 5;
+  }
+
+  function handleStep4AiSkip() {
+    step = 5;
+  }
+
   function handleStep4Start() {
     onComplete(chosenPrefixKey);
   }
@@ -65,10 +74,17 @@
         onSkip={handleStep3Skip}
       />
     {:else if step === 4}
+      <button class="close-btn" onclick={handleStep1Skip} aria-label="Close">✕</button>
+      <OnboardingStep4Ai
+        onNext={handleStep4AiNext}
+        onBack={() => (step = 3)}
+        onSkip={handleStep4AiSkip}
+      />
+    {:else if step === 5}
       <OnboardingStep4
         prefixKey={chosenPrefixKey}
         onStart={handleStep4Start}
-        onBack={() => (step = 3)}
+        onBack={() => (step = 4)}
       />
     {/if}
   </div>

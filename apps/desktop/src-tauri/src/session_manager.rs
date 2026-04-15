@@ -159,7 +159,15 @@ impl SessionManager {
         let event_tx = self.event_tx.clone();
         let sid = session_id;
         tokio::spawn(async move {
-            Self::route_output(sid, output_rx, buf_clone, event_tx, thermal_clone, attention_clone).await;
+            Self::route_output(
+                sid,
+                output_rx,
+                buf_clone,
+                event_tx,
+                thermal_clone,
+                attention_clone,
+            )
+            .await;
         });
 
         // Spawn exit monitoring task
@@ -205,6 +213,13 @@ impl SessionManager {
 
     pub fn get_workspace(&self) -> &Workspace {
         &self.workspace
+    }
+
+    pub fn get_focused_context_source(&self) -> Option<(Session, Arc<Mutex<OutputRingBuffer>>)> {
+        let session_id = self.workspace.focused_session_id?;
+        self.sessions
+            .get(&session_id)
+            .map(|managed| (managed.session.clone(), Arc::clone(&managed.output_buffer)))
     }
 
     pub fn update_process_state(&mut self, session_id: Uuid, state: ProcessState) {
@@ -286,8 +301,12 @@ impl SessionManager {
     }
 
     fn remove_session_from_workspace(&mut self, session_id: Uuid) {
-        self.workspace.hot_session_ids.retain(|id| *id != session_id);
-        self.workspace.warm_session_ids.retain(|id| *id != session_id);
+        self.workspace
+            .hot_session_ids
+            .retain(|id| *id != session_id);
+        self.workspace
+            .warm_session_ids
+            .retain(|id| *id != session_id);
 
         if self.workspace.focused_session_id == Some(session_id) {
             self.workspace.focused_session_id = self
@@ -312,7 +331,9 @@ impl SessionManager {
         managed.session.thermal_state = ThermalState::Warm;
         managed.session.updated_at = Utc::now();
 
-        self.workspace.hot_session_ids.retain(|id| *id != session_id);
+        self.workspace
+            .hot_session_ids
+            .retain(|id| *id != session_id);
         self.workspace.warm_session_ids.push(session_id);
 
         if self.workspace.focused_session_id == Some(session_id) {
@@ -336,7 +357,9 @@ impl SessionManager {
         managed.session.thermal_state = ThermalState::Hot;
         managed.session.updated_at = Utc::now();
 
-        self.workspace.warm_session_ids.retain(|id| *id != session_id);
+        self.workspace
+            .warm_session_ids
+            .retain(|id| *id != session_id);
         self.workspace.hot_session_ids.push(session_id);
         self.workspace.focused_session_id = Some(session_id);
 

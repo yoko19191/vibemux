@@ -22,6 +22,7 @@
   <div class="tip-box">
     <p class="tip">Press <kbd>{prefixKey}</kbd> to enter Navigation Mode.</p>
     <p class="tip">Try creating a new session with <kbd>{prefixKey}</kbd> then <kbd>N</kbd>.</p>
+    <p class="tip">Press <kbd>Cmd+K</kbd> to search. Ask AI is ready after setup, and can always be configured later in Settings > AI.</p>
   </div>
 </div>
 
@@ -30,9 +31,10 @@
     <span class="dot"></span>
     <span class="dot"></span>
     <span class="dot"></span>
+    <span class="dot"></span>
     <span class="dot active"></span>
   </div>
-  <span class="step-label">Step 4 of 4</span>
+  <span class="step-label">Step 5 of 5</span>
   <div class="footer-actions">
     <button class="back-btn" onclick={onBack}>← Back</button>
     <button class="start-btn" onclick={handleStart}>Start →</button>

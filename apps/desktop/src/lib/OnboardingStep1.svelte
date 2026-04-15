@@ -72,8 +72,9 @@
         <span class="dot"></span>
         <span class="dot"></span>
         <span class="dot"></span>
+        <span class="dot"></span>
       </div>
-      <span class="step-label">Step 1 of 4</span>
+      <span class="step-label">Step 1 of 5</span>
       <div class="footer-actions">
         <button class="skip-link" onclick={handleSkip}>Skip</button>
         <button class="next-btn" onclick={handleNext}>Next →</button>

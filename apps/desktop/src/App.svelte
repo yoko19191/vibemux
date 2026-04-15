@@ -24,6 +24,7 @@
   let showNewSession = $state(false);
   let showSettings = $state(false);
   let showSearch = $state(false);
+  let searchQuery = $state("");
   let showHelp = $state(false);
   let homeCwd = $state("/");
   let terminalApis: Map<string, { writeOutput: (data: string) => void }> = new Map();
@@ -250,7 +251,7 @@
     const isMac = navigator.platform.toUpperCase().includes("MAC");
     if ((isMac ? e.metaKey : e.ctrlKey) && e.key === "k") {
       e.preventDefault();
-      showSearch = true;
+      showSearch = !showSearch;
       navMode = false;
       return;
     }
@@ -550,6 +551,8 @@
   {#if showSearch}
     <SessionSearch
       sessions={sessions}
+      query={searchQuery}
+      onQueryChange={(value) => (searchQuery = value)}
       onSelect={handleSearchSelect}
       onClose={() => (showSearch = false)}
     />
