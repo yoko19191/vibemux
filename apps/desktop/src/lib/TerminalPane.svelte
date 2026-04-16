@@ -25,6 +25,8 @@
     onReady?: (api: {
       writeOutput: (data: string) => void;
       resetAndResize: () => void;
+      focus: () => void;
+      blur: () => void;
     }) => void;
     onRendererType?: (type: 'webgl' | 'canvas') => void;
   }
@@ -169,7 +171,6 @@
       writeOutput: (data: string) => terminal?.write(data),
       resetAndResize: () => {
         if (!terminal || !fitAddon) return;
-        // Clear screen and reset state so full-screen apps redraw cleanly on attach
         terminal.reset();
         fitAddon.fit();
         const dims = fitAddon.proposeDimensions();
@@ -177,6 +178,8 @@
           invoke("session_resize", { sessionId, cols: dims.cols, rows: dims.rows }).catch(console.error);
         }
       },
+      focus: () => terminal?.focus(),
+      blur: () => terminal?.blur(),
     });
   });
 

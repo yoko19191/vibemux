@@ -28,7 +28,7 @@
   let searchQuery = $state("");
   let showHelp = $state(false);
   let homeCwd = $state("/");
-  let terminalApis: Map<string, { writeOutput: (data: string) => void; resetAndResize: () => void }> = new Map();
+  let terminalApis: Map<string, { writeOutput: (data: string) => void; resetAndResize: () => void; focus: () => void; blur: () => void }> = new Map();
   let restoringSessionIds: Set<string> = $state(new Set());
   let pendingAttachSessionIds: Set<string> = new Set(); // Sessions waiting for TerminalPane mount to trigger reset+resize
   let unlisten: (() => void) | null = null;
@@ -100,6 +100,19 @@
       title = busy ? `⚙ ${label} · ${shortCwd} ${sessionInfo} — Vibemux` : `${label} · ${shortCwd} ${sessionInfo} — Vibemux`;
     }
     getCurrentWindow().setTitle(title).catch(() => {});
+  });
+
+  // Manage terminal focus based on nav mode:
+  // blur xterm when entering nav mode so keys reach window handler,
+  // refocus when leaving so typing goes back to the terminal.
+  $effect(() => {
+    if (!focusedSessionId) return;
+    const api = terminalApis.get(focusedSessionId);
+    if (navMode) {
+      api?.blur();
+    } else {
+      api?.focus();
+    }
   });
 
   onMount(async () => {
@@ -243,7 +256,7 @@
     await createInitialSession();
   }
 
-  function handleTerminalReady(sessionId: string, api: { writeOutput: (data: string) => void; resetAndResize: () => void }) {
+  function handleTerminalReady(sessionId: string, api: { writeOutput: (data: string) => void; resetAndResize: () => void; focus: () => void; blur: () => void }) {
     terminalApis.set(sessionId, api);
     // If this session was just recalled, trigger reset+resize now that the terminal is mounted
     if (pendingAttachSessionIds.has(sessionId)) {
