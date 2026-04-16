@@ -23,6 +23,7 @@
   let navMode = $state(false);
   let showNewSession = $state(false);
   let showSettings = $state(false);
+  let settingsInitialTab: "terminal" | "theme" | "layout" | "keys" | "ai" = $state("terminal");
   let showSearch = $state(false);
   let searchQuery = $state("");
   let showHelp = $state(false);
@@ -36,12 +37,19 @@
   let prefixKeyMatcher: PrefixKeyMatcher = $derived(parsePrefixKey(prefixKeyConfig));
   let prefixKeyDisplay = $derived(formatPrefixKey(prefixKeyConfig));
   let showOnboarding = $state(false);
+  let maxHotSessions = $state(6);
+  let hotSessionLimitWarning: { limit: number } | null = $state(null);
 
   // Terminal config derived from user config — passed to all TerminalPane instances
   let terminalConfig: { fontFamily?: string; fontSize?: number; lineHeight?: number; theme?: Record<string, string> } = $state({});
 
   let hotSessions = $derived(sessions.filter((s) => s.thermalState === "Hot"));
   let warmSessions = $derived(sessions.filter((s) => s.thermalState === "Warm"));
+
+  function readMaxHotSessions(cfg: any): number {
+    const value = Number(cfg?.layout?.max_hot_sessions);
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : 6;
+  }
 
   function buildTerminalConfig(cfg: any) {
     if (!cfg) return undefined;
@@ -104,7 +112,7 @@
         terminalApis.delete(muxEvent.sessionId);
         restoringSessionIds = new Set([...restoringSessionIds].filter((id) => id !== muxEvent.sessionId));
         if (focusedSessionId === muxEvent.sessionId) {
-          focusedSessionId = sessions[0]?.id ?? null;
+          focusedSessionId = sessions.find((s) => s.thermalState === "Hot")?.id ?? null;
         }
       } else if (muxEvent.type === "sessionParked") {
         sessions = sessions.map((s) =>
@@ -170,6 +178,7 @@
         if (cfg?.keys?.prefix) {
           prefixKeyConfig = cfg.keys.prefix;
         }
+        maxHotSessions = readMaxHotSessions(cfg);
         terminalConfig = buildTerminalConfig(cfg) ?? {};
         if (!cfg?.onboarding_completed) {
           showOnboarding = true;
@@ -228,6 +237,16 @@
     terminalApis.set(sessionId, api);
   }
 
+  function requestNewSession() {
+    navMode = false;
+    if (hotSessions.length >= maxHotSessions) {
+      hotSessionLimitWarning = { limit: maxHotSessions };
+      showNewSession = false;
+      return;
+    }
+    showNewSession = true;
+  }
+
   async function handleFocusSession(sessionId: string) {
     try {
       await invoke("session_focus", { sessionId });
@@ -278,8 +297,7 @@
         break;
       case "n":
       case "N":
-        showNewSession = true;
-        navMode = false;
+        requestNewSession();
         e.preventDefault();
         break;
       case "X":
@@ -355,17 +373,25 @@
   }
 
   function focusPrevSession() {
-    if (sessions.length < 2 || !focusedSessionId) return;
-    const idx = sessions.findIndex((s) => s.id === focusedSessionId);
-    const prevIdx = (idx - 1 + sessions.length) % sessions.length;
-    handleFocusSession(sessions[prevIdx].id);
+    if (hotSessions.length < 2 || !focusedSessionId) return;
+    const idx = hotSessions.findIndex((s) => s.id === focusedSessionId);
+    if (idx === -1) {
+      handleFocusSession(hotSessions[0].id);
+      return;
+    }
+    const prevIdx = (idx - 1 + hotSessions.length) % hotSessions.length;
+    handleFocusSession(hotSessions[prevIdx].id);
   }
 
   function focusNextSession() {
-    if (sessions.length < 2 || !focusedSessionId) return;
-    const idx = sessions.findIndex((s) => s.id === focusedSessionId);
-    const nextIdx = (idx + 1) % sessions.length;
-    handleFocusSession(sessions[nextIdx].id);
+    if (hotSessions.length < 2 || !focusedSessionId) return;
+    const idx = hotSessions.findIndex((s) => s.id === focusedSessionId);
+    if (idx === -1) {
+      handleFocusSession(hotSessions[0].id);
+      return;
+    }
+    const nextIdx = (idx + 1) % hotSessions.length;
+    handleFocusSession(hotSessions[nextIdx].id);
   }
 
   async function closeCurrentSession() {
@@ -374,7 +400,7 @@
       await invoke("session_close", { sessionId: focusedSessionId });
       sessions = sessions.filter((s) => s.id !== focusedSessionId);
       terminalApis.delete(focusedSessionId);
-      focusedSessionId = sessions[0]?.id ?? null;
+      focusedSessionId = sessions.find((s) => s.thermalState === "Hot")?.id ?? null;
     } catch (e) {
       console.error("Failed to close session:", e);
     }
@@ -386,7 +412,7 @@
       await invoke("session_kill", { sessionId: focusedSessionId });
       sessions = sessions.filter((s) => s.id !== focusedSessionId);
       terminalApis.delete(focusedSessionId);
-      focusedSessionId = sessions[0]?.id ?? null;
+      focusedSessionId = sessions.find((s) => s.thermalState === "Hot")?.id ?? null;
     } catch (e) {
       console.error("Failed to kill session:", e);
     }
@@ -406,6 +432,9 @@
       await invoke("session_recall", { sessionId });
     } catch (e) {
       console.error("Failed to recall session:", e);
+      if (String(e).includes("Hot Session limit reached")) {
+        hotSessionLimitWarning = { limit: maxHotSessions };
+      }
     }
   }
 
@@ -475,9 +504,12 @@
 <main class:has-shelf={warmSessions.length > 0}>
   <Titlebar
     prefixKey={prefixKeyDisplay}
-    onNewSession={() => { showNewSession = true; navMode = false; }}
+    onNewSession={requestNewSession}
     onSearch={() => { showSearch = true; navMode = false; }}
-    onSettings={() => (showSettings = true)}
+    onSettings={() => {
+      settingsInitialTab = "terminal";
+      showSettings = true;
+    }}
   />
 
   <div class="content-area" class:has-shelf={warmSessions.length > 0}>
@@ -540,12 +572,43 @@
 
   {#if showSettings}
     <SettingsPanel
+      initialTab={settingsInitialTab}
       onClose={() => (showSettings = false)}
       onConfigChange={(cfg) => {
         if (cfg?.keys?.prefix) prefixKeyConfig = cfg.keys.prefix;
+        maxHotSessions = readMaxHotSessions(cfg);
         terminalConfig = buildTerminalConfig(cfg) ?? {};
       }}
     />
+  {/if}
+
+  {#if hotSessionLimitWarning}
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="modal-overlay" onclick={() => (hotSessionLimitWarning = null)}>
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="limit-dialog" onclick={(e) => e.stopPropagation()}>
+        <div class="limit-title">Hot Session limit reached</div>
+        <p>
+          Current Hot Session limit is {hotSessionLimitWarning.limit}. Park or close a Hot Session first.
+          To adjust the limit, open Settings and change Max Hot Sessions under Layout.
+        </p>
+        <div class="limit-actions">
+          <button class="secondary-action" onclick={() => (hotSessionLimitWarning = null)}>OK</button>
+          <button
+            class="primary-action"
+            onclick={() => {
+              hotSessionLimitWarning = null;
+              settingsInitialTab = "layout";
+              showSettings = true;
+            }}
+          >
+            Open Settings
+          </button>
+        </div>
+      </div>
+    </div>
   {/if}
 
   {#if showSearch}
@@ -698,5 +761,75 @@
   .config-error-dismiss:hover {
     color: #d9d4c7;
     background: #2a2a2a;
+  }
+
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 250;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+
+  .limit-dialog {
+    width: 380px;
+    max-width: calc(100vw - 2rem);
+    background: #1a1a1a;
+    border: 1px solid #3a3a3a;
+    border-radius: 8px;
+    color: #d9d4c7;
+    padding: 1rem;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  }
+
+  .limit-title {
+    color: #f5f5f5;
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-bottom: 0.55rem;
+  }
+
+  .limit-dialog p {
+    color: #aaa;
+    font-size: 0.82rem;
+    line-height: 1.45;
+    margin: 0;
+  }
+
+  .limit-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 1rem;
+  }
+
+  .limit-actions button {
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.8rem;
+    padding: 0.45rem 0.8rem;
+  }
+
+  .secondary-action {
+    background: #2a2a2a;
+    color: #d9d4c7;
+  }
+
+  .secondary-action:hover {
+    background: #333;
+  }
+
+  .primary-action {
+    background: #3b82f6;
+    color: #fff;
+  }
+
+  .primary-action:hover {
+    background: #2563eb;
   }
 </style>

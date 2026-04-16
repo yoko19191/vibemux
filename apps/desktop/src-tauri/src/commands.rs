@@ -67,6 +67,7 @@ fn session_to_snapshot(session: &crate::models::Session) -> SessionSnapshot {
 #[tauri::command]
 pub async fn session_create(
     state: State<'_, AppState>,
+    config_state: State<'_, ConfigState>,
     payload: CreateSessionPayload,
 ) -> Result<SessionSnapshot, String> {
     eprintln!(
@@ -97,9 +98,15 @@ pub async fn session_create(
     };
 
     eprintln!("[vibemux] acquiring lock...");
+    let max_hot_sessions = config_state
+        .lock()
+        .map_err(|e| e.to_string())?
+        .layout
+        .max_hot_sessions as usize;
     let mut manager = state.lock().await;
     eprintln!("[vibemux] lock acquired, creating session...");
-    let session_id = manager.create_session(payload.name, payload.cwd, command, 80, 24)?;
+    let session_id =
+        manager.create_session(payload.name, payload.cwd, command, 80, 24, max_hot_sessions)?;
     eprintln!("[vibemux] session created: {}", session_id);
 
     let session = manager
@@ -214,11 +221,20 @@ pub async fn session_set_color(
 }
 
 #[tauri::command]
-pub async fn session_recall(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
+pub async fn session_recall(
+    state: State<'_, AppState>,
+    config_state: State<'_, ConfigState>,
+    session_id: String,
+) -> Result<(), String> {
     let uuid = Uuid::parse_str(&session_id)
         .map_err(|_| format!("invalid session id: '{}'", session_id))?;
+    let max_hot_sessions = config_state
+        .lock()
+        .map_err(|e| e.to_string())?
+        .layout
+        .max_hot_sessions as usize;
     let mut manager = state.lock().await;
-    manager.recall_session(uuid)
+    manager.recall_session(uuid, max_hot_sessions)
 }
 
 #[tauri::command]

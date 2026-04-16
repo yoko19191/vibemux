@@ -48,9 +48,10 @@
   interface Props {
     onClose?: () => void;
     onConfigChange?: (config: UserConfig) => void;
+    initialTab?: "terminal" | "theme" | "layout" | "keys" | "ai";
   }
 
-  let { onClose, onConfigChange }: Props = $props();
+  let { onClose, onConfigChange, initialTab = "terminal" }: Props = $props();
 
   let config: UserConfig | null = $state(null);
   let activeTab: "terminal" | "theme" | "layout" | "keys" | "ai" = $state("terminal");
@@ -72,6 +73,14 @@
   let prefixDropdownValue = $state("ctrl+b");
   let customPrefixValue = $state("");
   let showCustomInput = $derived(prefixDropdownValue === "__custom__");
+  let initialTabApplied = false;
+
+  $effect(() => {
+    if (!initialTabApplied) {
+      activeTab = initialTab;
+      initialTabApplied = true;
+    }
+  });
 
   $effect(() => {
     if (config?.keys?.prefix) {

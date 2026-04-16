@@ -10,8 +10,6 @@ use crate::models::*;
 use crate::pty_host::{PtyExitStatus, PtyHost};
 use crate::ring_buffer::OutputRingBuffer;
 
-const MAX_HOT_SESSIONS: usize = 6;
-
 const COLOR_CYCLE: [ColorToken; 8] = [
     ColorToken::Red,
     ColorToken::Cyan,
@@ -64,7 +62,6 @@ struct ManagedSession {
     pty: PtyHost,
     output_buffer: Arc<Mutex<OutputRingBuffer>>,
     thermal_state: Arc<Mutex<ThermalState>>,
-    attention_state: Arc<Mutex<AttentionState>>,
 }
 
 pub struct SessionManager {
@@ -100,7 +97,13 @@ impl SessionManager {
         command: SessionCommand,
         cols: u16,
         rows: u16,
+        max_hot_sessions: usize,
     ) -> Result<Uuid, String> {
+        let max_hot_sessions = max_hot_sessions.max(1);
+        if self.workspace.hot_session_ids.len() >= max_hot_sessions {
+            return Err(hot_session_limit_message(max_hot_sessions));
+        }
+
         let (cmd_str, args) = match &command {
             SessionCommand::Shell { shell } => (shell.clone(), vec![]),
             SessionCommand::Command { program, args } => (program.clone(), args.clone()),
@@ -117,13 +120,6 @@ impl SessionManager {
         let color = COLOR_CYCLE[self.color_index % COLOR_CYCLE.len()].clone();
         self.color_index += 1;
 
-        let is_hot = self.workspace.hot_session_ids.len() < MAX_HOT_SESSIONS;
-        let thermal_state = if is_hot {
-            ThermalState::Hot
-        } else {
-            ThermalState::Warm
-        };
-
         let session = Session {
             id: session_id,
             name,
@@ -132,7 +128,7 @@ impl SessionManager {
             command,
             color,
             workspace_id: self.workspace.id,
-            thermal_state,
+            thermal_state: ThermalState::Hot,
             process_state: ProcessState::Running,
             attention_state: AttentionState::Normal,
             terminal_title: String::new(),
@@ -141,11 +137,7 @@ impl SessionManager {
             last_activity_at: now,
         };
 
-        if is_hot {
-            self.workspace.hot_session_ids.push(session_id);
-        } else {
-            self.workspace.warm_session_ids.push(session_id);
-        }
+        self.workspace.hot_session_ids.push(session_id);
         self.workspace.focused_session_id = Some(session_id);
 
         let output_buffer = Arc::new(Mutex::new(OutputRingBuffer::new()));
@@ -184,7 +176,6 @@ impl SessionManager {
                 pty,
                 output_buffer,
                 thermal_state: shared_thermal,
-                attention_state: shared_attention,
             },
         );
 
@@ -330,6 +321,9 @@ impl SessionManager {
 
         managed.session.thermal_state = ThermalState::Warm;
         managed.session.updated_at = Utc::now();
+        if let Ok(mut thermal) = managed.thermal_state.try_lock() {
+            *thermal = ThermalState::Warm;
+        }
 
         self.workspace
             .hot_session_ids
@@ -344,18 +338,38 @@ impl SessionManager {
         Ok(())
     }
 
-    pub fn recall_session(&mut self, session_id: Uuid) -> Result<(), String> {
+    pub fn recall_session(
+        &mut self,
+        session_id: Uuid,
+        max_hot_sessions: usize,
+    ) -> Result<(), String> {
+        let current_state = self
+            .sessions
+            .get(&session_id)
+            .ok_or_else(|| format!("session {} not found", session_id))?
+            .session
+            .thermal_state
+            .clone();
+
+        if current_state != ThermalState::Warm {
+            return Err(format!("session {} is not a warm session", session_id));
+        }
+
+        let max_hot_sessions = max_hot_sessions.max(1);
+        if self.workspace.hot_session_ids.len() >= max_hot_sessions {
+            return Err(hot_session_limit_message(max_hot_sessions));
+        }
+
         let managed = self
             .sessions
             .get_mut(&session_id)
             .ok_or_else(|| format!("session {} not found", session_id))?;
 
-        if managed.session.thermal_state != ThermalState::Warm {
-            return Err(format!("session {} is not a warm session", session_id));
-        }
-
         managed.session.thermal_state = ThermalState::Hot;
         managed.session.updated_at = Utc::now();
+        if let Ok(mut thermal) = managed.thermal_state.try_lock() {
+            *thermal = ThermalState::Hot;
+        }
 
         self.workspace
             .warm_session_ids
@@ -484,6 +498,13 @@ impl SessionManager {
             });
         }
     }
+}
+
+fn hot_session_limit_message(limit: usize) -> String {
+    format!(
+        "Hot Session limit reached. Current Hot Session limit is {}. Park or close a Hot Session, or change Max Hot Sessions in Settings > Layout.",
+        limit
+    )
 }
 
 fn detect_attention_state(text: &str) -> Option<AttentionState> {
