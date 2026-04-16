@@ -14,15 +14,18 @@
     query: string;
     onQueryChange: (query: string) => void;
     onSelect: (sessionId: string, thermal: "Hot" | "Warm") => void;
+    onNewSession: () => void;
+    onKillSession: (sessionId: string) => Promise<void> | void;
     onClose: () => void;
   }
 
   type PaletteItem =
     | { type: "ask-ai"; disabled: boolean; reason: string }
+    | { type: "new-session" }
     | { type: "session"; session: SessionSnapshot }
     | { type: "thread"; thread: AiThreadSummary };
 
-  let { sessions, query: initialQuery, onQueryChange, onSelect, onClose }: Props = $props();
+  let { sessions, query: initialQuery, onQueryChange, onSelect, onNewSession, onKillSession, onClose }: Props = $props();
 
   let query = $state("");
   let selectedIdx = $state(0);
@@ -35,6 +38,8 @@
   let aiError: string | null = $state(null);
   let sending = $state(false);
   let activeRequestId: string | null = $state(null);
+  let pendingKillSession: SessionSnapshot | null = $state(null);
+  let killConfirmButton: HTMLButtonElement | null = $state(null);
   let unlistenAi: (() => void) | null = null;
   let pendingDeltas = new Map<string, string>();
   let pendingDone = new Set<string>();
@@ -100,6 +105,7 @@
 
   let paletteItems = $derived.by(() => [
     { type: "ask-ai", disabled: !aiReady, reason: aiUnavailableReason } as PaletteItem,
+    { type: "new-session" } as PaletteItem,
     ...filteredSessions.map((session) => ({ type: "session", session }) as PaletteItem),
     ...filteredThreads.map((thread) => ({ type: "thread", thread }) as PaletteItem),
   ]);
@@ -116,6 +122,12 @@
     filteredSessions.length;
     filteredThreads.length;
     selectedIdx = 0;
+  });
+
+  $effect(() => {
+    if (pendingKillSession) {
+      setTimeout(() => killConfirmButton?.focus(), 0);
+    }
   });
 
   setTimeout(() => inputEl?.focus(), 0);
@@ -158,6 +170,10 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    if (pendingKillSession) {
+      return;
+    }
+
     if (e.key === "Escape") {
       e.preventDefault();
       if (mode === "chat") {
@@ -184,6 +200,13 @@
     }
   }
 
+  function handleKillDialogKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      pendingKillSession = null;
+    }
+  }
+
   function activatePaletteItem(item: PaletteItem | undefined) {
     if (!item) return;
     if (item.type === "ask-ai") {
@@ -195,10 +218,43 @@
       query = "#";
       mode = "chat";
       setTimeout(() => inputEl?.focus(), 0);
+    } else if (item.type === "new-session") {
+      onNewSession();
     } else if (item.type === "session") {
       onSelect(item.session.id, item.session.thermalState as "Hot" | "Warm");
     } else if (item.type === "thread") {
       openThread(item.thread.id);
+    }
+  }
+
+  function requestKillSession(e: MouseEvent, session: SessionSnapshot) {
+    e.stopPropagation();
+    aiError = null;
+    pendingKillSession = session;
+  }
+
+  async function confirmKillSession() {
+    if (!pendingKillSession) return;
+    const sessionId = pendingKillSession.id;
+    try {
+      await onKillSession(sessionId);
+      pendingKillSession = null;
+    } catch (e) {
+      aiError = String(e);
+    }
+  }
+
+  async function deleteThread(e: MouseEvent, thread: AiThreadSummary) {
+    e.stopPropagation();
+    aiError = null;
+    try {
+      await invoke("ai_delete_thread", { threadId: thread.id });
+      threads = threads.filter((t) => t.id !== thread.id);
+      if (activeThread?.id === thread.id) {
+        activeThread = null;
+      }
+    } catch (err) {
+      aiError = String(err);
     }
   }
 
@@ -404,6 +460,18 @@
               <span class="session-name">Ask AI</span>
               <span class="cwd">{item.disabled ? item.reason : "Start an AI instruction"}</span>
             </div>
+          {:else if item.type === "new-session"}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="result-item action-item"
+              class:selected={i === selectedIdx}
+              onclick={() => activatePaletteItem(item)}
+            >
+              <span class="action-mark">+</span>
+              <span class="session-name">New Session</span>
+              <span class="cwd">Create a terminal session</span>
+            </div>
           {:else if item.type === "session"}
             {@const session = item.session}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -417,6 +485,13 @@
               <span class="session-name">{session.name}</span>
               <span class="thermal-badge" class:warm={session.thermalState === 'Warm'}>{thermalLabel[session.thermalState] ?? session.thermalState}</span>
               <span class="cwd">{shortCwd(session.cwd)}</span>
+              <button
+                class="row-action danger-action"
+                type="button"
+                title="Kill session"
+                aria-label="Kill session {session.name}"
+                onclick={(e) => requestKillSession(e, session)}
+              >X</button>
             </div>
           {/if}
         {/each}
@@ -437,6 +512,13 @@
                 <span class="thread-title">{thread.title}</span>
                 <span class="thread-preview">{thread.lastMessagePreview}</span>
               </span>
+              <button
+                class="row-action danger-action"
+                type="button"
+                title="Delete chat thread"
+                aria-label="Delete chat thread {thread.title}"
+                onclick={(e) => deleteThread(e, thread)}
+              >&#128465;</button>
             </div>
           {/each}
         {/if}
@@ -455,6 +537,39 @@
       <span>↵ select/send</span>
       <span>esc {mode === "chat" ? "search" : "close"}</span>
     </div>
+
+    {#if pendingKillSession}
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <div class="confirm-backdrop" onclick={() => (pendingKillSession = null)}>
+        <div
+          class="confirm-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="kill-session-title"
+          tabindex="-1"
+          onclick={(e) => e.stopPropagation()}
+          onkeydown={handleKillDialogKeydown}
+        >
+          <h2 id="kill-session-title">Kill Session?</h2>
+          <p>
+            This will force stop <strong>{pendingKillSession.name}</strong>.
+          </p>
+          <div class="confirm-actions">
+            <button
+              class="confirm-button secondary"
+              type="button"
+              onclick={() => (pendingKillSession = null)}
+            >Cancel</button>
+            <button
+              class="confirm-button danger"
+              type="button"
+              bind:this={killConfirmButton}
+              onclick={confirmKillSession}
+            >Kill</button>
+          </div>
+        </div>
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -483,6 +598,7 @@
     font-family: system-ui, -apple-system, sans-serif;
     display: flex;
     flex-direction: column;
+    position: relative;
   }
 
   .search-row {
@@ -602,6 +718,36 @@
     min-width: 0;
   }
 
+  .row-action {
+    width: 42px;
+    height: 24px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    color: #777;
+    cursor: pointer;
+    flex-shrink: 0;
+    font-family: inherit;
+    font-size: 0.68rem;
+    opacity: 0;
+    padding: 0;
+    transition: opacity 0.1s, color 0.1s, border-color 0.1s, background 0.1s;
+  }
+
+  .result-item:hover .row-action,
+  .result-item.selected .row-action,
+  .row-action:focus-visible {
+    opacity: 1;
+  }
+
+  .danger-action:hover,
+  .danger-action:focus-visible {
+    background: #ef444418;
+    border-color: #ef444460;
+    color: #fca5a5;
+    outline: none;
+  }
+
   .section-label {
     color: #555;
     font-size: 0.68rem;
@@ -620,6 +766,7 @@
     flex-direction: column;
     gap: 0.1rem;
     min-width: 0;
+    flex: 1;
   }
 
   .thread-title {
@@ -734,5 +881,76 @@
     color: #444;
     font-size: 0.7rem;
     flex-shrink: 0;
+  }
+
+  .confirm-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.58);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    z-index: 5;
+  }
+
+  .confirm-dialog {
+    width: 320px;
+    max-width: 100%;
+    background: #191919;
+    border: 1px solid #3a3a3a;
+    border-radius: 8px;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
+    color: #d9d4c7;
+    padding: 1rem;
+  }
+
+  .confirm-dialog h2 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0 0 0.5rem;
+  }
+
+  .confirm-dialog p {
+    color: #888;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    margin: 0 0 1rem;
+  }
+
+  .confirm-dialog strong {
+    color: #d9d4c7;
+    font-weight: 600;
+  }
+
+  .confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+
+  .confirm-button {
+    border: 1px solid #3a3a3a;
+    border-radius: 5px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.78rem;
+    padding: 0.38rem 0.7rem;
+  }
+
+  .confirm-button:focus-visible {
+    outline: 2px solid #60a5fa;
+    outline-offset: 2px;
+  }
+
+  .confirm-button.secondary {
+    background: #111;
+    color: #aaa;
+  }
+
+  .confirm-button.danger {
+    background: #ef444420;
+    border-color: #ef444470;
+    color: #fca5a5;
   }
 </style>

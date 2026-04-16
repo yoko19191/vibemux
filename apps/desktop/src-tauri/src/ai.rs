@@ -182,6 +182,15 @@ impl AiStore {
             .cloned()
     }
 
+    fn delete_thread(&mut self, thread_id: &str) -> Result<(), String> {
+        let initial_len = self.threads.len();
+        self.threads.retain(|thread| thread.id != thread_id);
+        if self.threads.len() == initial_len {
+            return Err(format!("AI thread {} not found", thread_id));
+        }
+        self.save()
+    }
+
     fn create_or_append_user_message(
         &mut self,
         thread_id: Option<String>,
@@ -312,6 +321,15 @@ pub async fn ai_get_thread(
     store
         .get_thread(&thread_id)
         .ok_or_else(|| format!("AI thread {} not found", thread_id))
+}
+
+#[tauri::command]
+pub async fn ai_delete_thread(
+    ai_state: State<'_, AiState>,
+    thread_id: String,
+) -> Result<(), String> {
+    let mut store = ai_state.lock().await;
+    store.delete_thread(&thread_id)
 }
 
 #[tauri::command]

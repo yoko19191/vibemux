@@ -409,10 +409,7 @@
   async function killCurrentSession() {
     if (!focusedSessionId) return;
     try {
-      await invoke("session_kill", { sessionId: focusedSessionId });
-      sessions = sessions.filter((s) => s.id !== focusedSessionId);
-      terminalApis.delete(focusedSessionId);
-      focusedSessionId = sessions.find((s) => s.thermalState === "Hot")?.id ?? null;
+      await killSessionById(focusedSessionId);
     } catch (e) {
       console.error("Failed to kill session:", e);
     }
@@ -471,6 +468,15 @@
     }
   }
 
+  async function killSessionById(sessionId: string) {
+    await invoke("session_kill", { sessionId });
+    sessions = sessions.filter((s) => s.id !== sessionId);
+    terminalApis.delete(sessionId);
+    if (focusedSessionId === sessionId) {
+      focusedSessionId = sessions.find((s) => s.thermalState === "Hot")?.id ?? null;
+    }
+  }
+
   async function handleShelfRename(sessionId: string, name: string) {
     try {
       await invoke("session_rename", { sessionId, name });
@@ -490,9 +496,7 @@
 
   async function handleShelfKill(sessionId: string) {
     try {
-      await invoke("session_kill", { sessionId });
-      sessions = sessions.filter((s) => s.id !== sessionId);
-      terminalApis.delete(sessionId);
+      await killSessionById(sessionId);
     } catch (e) {
       console.error("Failed to kill session:", e);
     }
@@ -617,6 +621,8 @@
       query={searchQuery}
       onQueryChange={(value) => (searchQuery = value)}
       onSelect={handleSearchSelect}
+      onNewSession={() => { showSearch = false; requestNewSession(); }}
+      onKillSession={killSessionById}
       onClose={() => (showSearch = false)}
     />
   {/if}

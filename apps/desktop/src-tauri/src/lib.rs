@@ -53,6 +53,7 @@ pub fn run() {
             ai::ai_list_models,
             ai::ai_list_threads,
             ai::ai_get_thread,
+            ai::ai_delete_thread,
             ai::ai_send_message,
             ai::ai_get_focused_context,
         ])
