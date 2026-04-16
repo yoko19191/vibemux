@@ -377,11 +377,36 @@ impl SessionManager {
         self.workspace.hot_session_ids.push(session_id);
         self.workspace.focused_session_id = Some(session_id);
 
-        // Skip replay - frontend will trigger resize which sends SIGWINCH
-        // This forces full-screen apps (htop, vim) to redraw completely
-        // Send ReplayEnd immediately to signal recall completion
+        // Replay ring buffer to restore screen state, then frontend sends
+        // SIGWINCH via resize to refresh dynamic content (htop values, etc.)
+        let buffer = Arc::clone(&managed.output_buffer);
         let event_tx = self.event_tx.clone();
-        let _ = event_tx.send(MuxEvent::ReplayEnd { session_id });
+        let sid = session_id;
+        tokio::spawn(async move {
+            let entries = {
+                let buf = buffer.lock().await;
+                buf.get_all()
+            };
+            if entries.is_empty() {
+                let _ = event_tx.send(MuxEvent::ReplayEnd { session_id: sid });
+                return;
+            }
+            let from_seq = entries.first().map(|e| e.seq).unwrap_or(0);
+            let to_seq = entries.last().map(|e| e.seq).unwrap_or(0);
+            let _ = event_tx.send(MuxEvent::ReplayStart {
+                session_id: sid,
+                from_seq,
+                to_seq,
+            });
+            for entry in entries {
+                let _ = event_tx.send(MuxEvent::ReplayChunk {
+                    session_id: sid,
+                    data: entry.data,
+                    seq: entry.seq,
+                });
+            }
+            let _ = event_tx.send(MuxEvent::ReplayEnd { session_id: sid });
+        });
 
         Ok(())
     }

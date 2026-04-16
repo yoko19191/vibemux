@@ -24,7 +24,7 @@
     prefixKeyMatcher?: PrefixKeyMatcher;
     onReady?: (api: {
       writeOutput: (data: string) => void;
-      resetAndResize: () => void;
+      triggerResize: () => void;
       focus: () => void;
       blur: () => void;
     }) => void;
@@ -169,9 +169,8 @@
     // Notify parent that terminal is ready
     onReady?.({
       writeOutput: (data: string) => terminal?.write(data),
-      resetAndResize: () => {
+      triggerResize: () => {
         if (!terminal || !fitAddon) return;
-        terminal.reset();
         fitAddon.fit();
         const dims = fitAddon.proposeDimensions();
         if (dims) {

@@ -19,7 +19,7 @@
     renamingSessionId?: string | null;
     terminalConfig?: TerminalConfig;
     prefixKeyMatcher?: PrefixKeyMatcher;
-    onTerminalReady?: (sessionId: string, api: { writeOutput: (data: string) => void; resetAndResize: () => void; focus: () => void; blur: () => void }) => void;
+    onTerminalReady?: (sessionId: string, api: { writeOutput: (data: string) => void; triggerResize: () => void; focus: () => void; blur: () => void }) => void;
     onFocusSession?: (sessionId: string) => void;
     onRenameConfirm?: (sessionId: string, name: string) => void;
     onRenameCancel?: () => void;

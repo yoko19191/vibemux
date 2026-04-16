@@ -28,9 +28,8 @@
   let searchQuery = $state("");
   let showHelp = $state(false);
   let homeCwd = $state("/");
-  let terminalApis: Map<string, { writeOutput: (data: string) => void; resetAndResize: () => void; focus: () => void; blur: () => void }> = new Map();
+  let terminalApis: Map<string, { writeOutput: (data: string) => void; triggerResize: () => void; focus: () => void; blur: () => void }> = new Map();
   let restoringSessionIds: Set<string> = $state(new Set());
-  let pendingAttachSessionIds: Set<string> = new Set(); // Sessions waiting for TerminalPane mount to trigger reset+resize
   let unlisten: (() => void) | null = null;
   let selectedShelfIdx: number | null = $state(null);
   let renamingSessionId: string | null = $state(null);
@@ -159,14 +158,11 @@
         onReplayChunk(muxEvent.sessionId, muxEvent.data);
       } else if (muxEvent.type === "replayEnd") {
         onReplayEnd(muxEvent.sessionId);
-        // replayStart is no longer emitted (we skip replay and send SIGWINCH instead)
-        // so we update thermalState → Hot and focus here on replayEnd
-        const isWarm = sessions.find((s) => s.id === muxEvent.sessionId)?.thermalState === "Warm";
-        if (isWarm) {
-          sessions = sessions.map((s) =>
-            s.id === muxEvent.sessionId ? { ...s, thermalState: "Hot" as const } : s
-          );
-          focusedSessionId = muxEvent.sessionId;
+        // After replay restores screen state, send SIGWINCH via resize
+        // so dynamic content (htop values, etc.) refreshes immediately
+        const api = terminalApis.get(muxEvent.sessionId);
+        if (api) {
+          api.triggerResize();
         }
       } else if (muxEvent.type === "attentionChanged") {
         sessions = sessions.map((s) =>
@@ -256,14 +252,8 @@
     await createInitialSession();
   }
 
-  function handleTerminalReady(sessionId: string, api: { writeOutput: (data: string) => void; resetAndResize: () => void; focus: () => void; blur: () => void }) {
+  function handleTerminalReady(sessionId: string, api: { writeOutput: (data: string) => void; triggerResize: () => void; focus: () => void; blur: () => void }) {
     terminalApis.set(sessionId, api);
-    // If this session was just recalled, trigger reset+resize then focus
-    if (pendingAttachSessionIds.has(sessionId)) {
-      pendingAttachSessionIds.delete(sessionId);
-      api.resetAndResize();
-      api.focus();
-    }
   }
 
   function requestNewSession() {
@@ -456,8 +446,6 @@
   async function recallSession(sessionId: string) {
     try {
       await invoke("session_recall", { sessionId });
-      // TerminalPane hasn't mounted yet — mark for reset+resize on next onReady
-      pendingAttachSessionIds.add(sessionId);
     } catch (e) {
       console.error("Failed to recall session:", e);
       if (String(e).includes("Hot Session limit reached")) {
