@@ -66,6 +66,19 @@ impl PtyHost {
         cmd.args(args);
         cmd.cwd(cwd_path);
 
+        // Set essential environment variables for proper terminal behavior
+        // This is critical in .app bundles where the environment may be minimal
+        cmd.env("TERM", "xterm-256color");
+
+        // Set locale to UTF-8 to ensure proper character encoding
+        // Without this, characters may render as broken control sequences
+        if std::env::var("LANG").is_err() {
+            cmd.env("LANG", "en_US.UTF-8");
+        }
+        if std::env::var("LC_ALL").is_err() {
+            cmd.env("LC_ALL", "en_US.UTF-8");
+        }
+
         let mut child = pair
             .slave
             .spawn_command(cmd)

@@ -1,0 +1,29 @@
+/**
+ * Bundled fonts for terminal rendering.
+ * Ensures fonts are available in the production .app bundle where
+ * system font access may be restricted.
+ */
+
+@font-face {
+  font-family: 'Menlo';
+  src: url('./fonts/Menlo-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('./fonts/JetBrainsMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('./fonts/JetBrainsMono-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
