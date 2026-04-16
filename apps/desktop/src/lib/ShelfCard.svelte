@@ -116,7 +116,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="shelf-card" style="border-color: {dotColor};" oncontextmenu={handleContextMenu}>
+<div class="detached-card" style="border-color: {dotColor};" oncontextmenu={handleContextMenu}>
   {#if renamingInline}
     <!-- svelte-ignore a11y_autofocus -->
     <input
@@ -150,7 +150,7 @@
 {/if}
 
 <style>
-  .shelf-card {
+  .detached-card {
     flex-shrink: 0;
     width: 140px;
     height: 21px;
@@ -168,7 +168,7 @@
     box-shadow: 0 2px 8px rgba(0,0,0,0.4);
   }
 
-  .shelf-card:hover {
+  .detached-card:hover {
     background: rgba(255, 255, 255, 0.08);
     box-shadow: 0 4px 12px rgba(0,0,0,0.6);
   }

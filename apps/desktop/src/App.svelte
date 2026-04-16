@@ -28,7 +28,7 @@
   let searchQuery = $state("");
   let showHelp = $state(false);
   let homeCwd = $state("/");
-  let terminalApis: Map<string, { writeOutput: (data: string) => void }> = new Map();
+  let terminalApis: Map<string, { writeOutput: (data: string) => void; resetAndResize: () => void }> = new Map();
   let restoringSessionIds: Set<string> = $state(new Set());
   let unlisten: (() => void) | null = null;
   let selectedShelfIdx: number | null = $state(null);
@@ -233,7 +233,7 @@
     await createInitialSession();
   }
 
-  function handleTerminalReady(sessionId: string, api: { writeOutput: (data: string) => void }) {
+  function handleTerminalReady(sessionId: string, api: { writeOutput: (data: string) => void; resetAndResize: () => void }) {
     terminalApis.set(sessionId, api);
   }
 
@@ -427,6 +427,8 @@
   async function recallSession(sessionId: string) {
     try {
       await invoke("session_recall", { sessionId });
+      // Reset xterm and trigger resize → SIGWINCH so full-screen apps redraw
+      terminalApis.get(sessionId)?.resetAndResize();
     } catch (e) {
       console.error("Failed to recall session:", e);
       if (String(e).includes("Hot Session limit reached")) {
@@ -505,7 +507,7 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<main class:has-shelf={warmSessions.length > 0}>
+<main class:has-detached={warmSessions.length > 0}>
   <Titlebar
     prefixKey={prefixKeyDisplay}
     onNewSession={requestNewSession}
@@ -516,7 +518,7 @@
     }}
   />
 
-  <div class="content-area" class:has-shelf={warmSessions.length > 0}>
+  <div class="content-area" class:has-detached={warmSessions.length > 0}>
     {#if configError}
       <div class="config-error-banner">
         <span class="config-error-icon">⚠</span>
@@ -560,9 +562,9 @@
   />
 
   {#if navMode}
-    <div class="nav-indicator" class:shelf-offset={warmSessions.length > 0}>
+    <div class="nav-indicator" class:detached-offset={warmSessions.length > 0}>
       <span class="nav-badge">NAV ({prefixKeyDisplay})</span>
-      <span class="nav-hint">h/l: switch · n: new · b: park · j/k: shelf · Enter: recall · x: close · X: kill · esc: cancel</span>
+      <span class="nav-hint">h/l: switch · n: new · b: detach · j/k: detached · Enter: attach · x: close · X: kill · esc: cancel</span>
     </div>
   {/if}
 
@@ -663,7 +665,7 @@
     overflow: hidden;
   }
 
-  .content-area.has-shelf {
+  .content-area.has-detached {
     bottom: 31px;
   }
 
@@ -704,7 +706,7 @@
     z-index: 50;
   }
 
-  .nav-indicator.shelf-offset {
+  .nav-indicator.detached-offset {
     bottom: 31px;
   }
 

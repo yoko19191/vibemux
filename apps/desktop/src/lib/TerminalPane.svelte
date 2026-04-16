@@ -22,7 +22,10 @@
     sessionId: string;
     terminalConfig?: TerminalConfig;
     prefixKeyMatcher?: PrefixKeyMatcher;
-    onReady?: (api: { writeOutput: (data: string) => void }) => void;
+    onReady?: (api: {
+      writeOutput: (data: string) => void;
+      resetAndResize: () => void;
+    }) => void;
     onRendererType?: (type: 'webgl' | 'canvas') => void;
   }
 
@@ -164,6 +167,16 @@
     // Notify parent that terminal is ready
     onReady?.({
       writeOutput: (data: string) => terminal?.write(data),
+      resetAndResize: () => {
+        if (!terminal || !fitAddon) return;
+        // Clear screen and reset state so full-screen apps redraw cleanly on attach
+        terminal.reset();
+        fitAddon.fit();
+        const dims = fitAddon.proposeDimensions();
+        if (dims) {
+          invoke("session_resize", { sessionId, cols: dims.cols, rows: dims.rows }).catch(console.error);
+        }
+      },
     });
   });
 
