@@ -258,10 +258,11 @@
 
   function handleTerminalReady(sessionId: string, api: { writeOutput: (data: string) => void; resetAndResize: () => void; focus: () => void; blur: () => void }) {
     terminalApis.set(sessionId, api);
-    // If this session was just recalled, trigger reset+resize now that the terminal is mounted
+    // If this session was just recalled, trigger reset+resize then focus
     if (pendingAttachSessionIds.has(sessionId)) {
       pendingAttachSessionIds.delete(sessionId);
       api.resetAndResize();
+      api.focus();
     }
   }
 
