@@ -146,6 +146,15 @@
         onReplayChunk(muxEvent.sessionId, muxEvent.data);
       } else if (muxEvent.type === "replayEnd") {
         onReplayEnd(muxEvent.sessionId);
+        // replayStart is no longer emitted (we skip replay and send SIGWINCH instead)
+        // so we update thermalState → Hot and focus here on replayEnd
+        const isWarm = sessions.find((s) => s.id === muxEvent.sessionId)?.thermalState === "Warm";
+        if (isWarm) {
+          sessions = sessions.map((s) =>
+            s.id === muxEvent.sessionId ? { ...s, thermalState: "Hot" as const } : s
+          );
+          focusedSessionId = muxEvent.sessionId;
+        }
       } else if (muxEvent.type === "attentionChanged") {
         sessions = sessions.map((s) =>
           s.id === muxEvent.sessionId ? { ...s, attentionState: muxEvent.attentionState } : s
