@@ -28,7 +28,7 @@
     isRenaming?: boolean;
     terminalConfig?: TerminalConfig;
     prefixKeyMatcher?: PrefixKeyMatcher;
-    onReady?: (api: { writeOutput: (data: string) => void }) => void;
+    onReady?: (api: { writeOutput: (data: string) => void; resetAndResize: () => void }) => void;
     onclick?: () => void;
     ondragstart?: (e: DragEvent) => void;
     ondragover?: (e: DragEvent) => void;
@@ -117,7 +117,7 @@
 
   function buildContextMenuItems(): ContextMenuItem[] {
     return [
-      { label: "Park to Shelf", onClick: () => onPark?.() },
+      { label: "Detach", onClick: () => onPark?.() },
       { label: "Rename", onClick: startRename },
       {
         type: "submenu",
@@ -140,7 +140,7 @@
 
   function getContextMenuItems(): ContextMenuItem[] {
     return [
-      { label: "Park to Shelf", onClick: () => onPark?.() },
+      { label: "Detach", onClick: () => onPark?.() },
       { label: "Rename", onClick: startRename },
       {
         type: "submenu",
@@ -208,7 +208,7 @@
       {/if}
       {#if isFocused && isHovered}
         <div class="header-actions" onclick={(e) => e.stopPropagation()}>
-          <button class="hdr-btn" title="Park to Shelf (Ctrl+B, B)" onclick={() => onPark?.()}>⬇</button>
+          <button class="hdr-btn" title="Detach (Ctrl+B, B)" onclick={() => onPark?.()}>⬇</button>
           <button class="hdr-btn" title="Rename (Ctrl+B, R)" onclick={startRename}>✎</button>
           <button class="hdr-btn hdr-btn-close" title="Close (Ctrl+B, X)" onclick={() => onClose?.()}>✕</button>
         </div>

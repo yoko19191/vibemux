@@ -30,6 +30,7 @@
   let homeCwd = $state("/");
   let terminalApis: Map<string, { writeOutput: (data: string) => void; resetAndResize: () => void }> = new Map();
   let restoringSessionIds: Set<string> = $state(new Set());
+  let pendingAttachSessionIds: Set<string> = new Set(); // Sessions waiting for TerminalPane mount to trigger reset+resize
   let unlisten: (() => void) | null = null;
   let selectedShelfIdx: number | null = $state(null);
   let renamingSessionId: string | null = $state(null);
@@ -235,6 +236,11 @@
 
   function handleTerminalReady(sessionId: string, api: { writeOutput: (data: string) => void; resetAndResize: () => void }) {
     terminalApis.set(sessionId, api);
+    // If this session was just recalled, trigger reset+resize now that the terminal is mounted
+    if (pendingAttachSessionIds.has(sessionId)) {
+      pendingAttachSessionIds.delete(sessionId);
+      api.resetAndResize();
+    }
   }
 
   function requestNewSession() {
@@ -427,8 +433,8 @@
   async function recallSession(sessionId: string) {
     try {
       await invoke("session_recall", { sessionId });
-      // Reset xterm and trigger resize → SIGWINCH so full-screen apps redraw
-      terminalApis.get(sessionId)?.resetAndResize();
+      // TerminalPane hasn't mounted yet — mark for reset+resize on next onReady
+      pendingAttachSessionIds.add(sessionId);
     } catch (e) {
       console.error("Failed to recall session:", e);
       if (String(e).includes("Hot Session limit reached")) {
