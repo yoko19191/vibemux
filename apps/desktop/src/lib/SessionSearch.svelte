@@ -49,8 +49,16 @@
     return initialQuery;
   }
 
-  query = getInitialQuery();
-  mode = getInitialQuery().startsWith("#") ? "chat" : "search";
+  function isChatTrigger(value: string): boolean {
+    return value.startsWith("#");
+  }
+
+  function promptFromTrigger(value: string): string {
+    return isChatTrigger(value) ? value.slice(1).trimStart() : value;
+  }
+
+  query = promptFromTrigger(getInitialQuery());
+  mode = isChatTrigger(getInitialQuery()) ? "chat" : "search";
 
   const colorMap: Record<string, string> = {
     Red: "#ef4444",
@@ -111,10 +119,11 @@
   ]);
 
   $effect(() => {
-    onQueryChange(query);
-    if (query.startsWith("#")) {
+    if (isChatTrigger(query)) {
+      query = promptFromTrigger(query);
       mode = "chat";
     }
+    onQueryChange(query);
   });
 
   $effect(() => {
@@ -162,11 +171,11 @@
   }
 
   function normalQuery(): string {
-    return query.startsWith("#") ? "" : query.toLowerCase().trim();
+    return mode === "chat" ? "" : query.toLowerCase().trim();
   }
 
   function aiInstruction(): string {
-    return query.startsWith("#") ? query.slice(1).trim() : query.trim();
+    return query.trim();
   }
 
   function handleKeydown(e: KeyboardEvent) {
@@ -192,7 +201,7 @@
       selectedIdx = Math.max(selectedIdx - 1, 0);
     } else if (e.key === "Enter") {
       e.preventDefault();
-      if (mode === "chat" || query.startsWith("#")) {
+      if (mode === "chat" || isChatTrigger(query)) {
         sendAiMessage();
       } else {
         activatePaletteItem(paletteItems[selectedIdx]);
@@ -215,7 +224,7 @@
         return;
       }
       activeThread = null;
-      query = "#";
+      query = "";
       mode = "chat";
       setTimeout(() => inputEl?.focus(), 0);
     } else if (item.type === "new-session") {
@@ -261,7 +270,7 @@
   async function openThread(threadId: string) {
     try {
       activeThread = await invoke<AiThread>("ai_get_thread", { threadId });
-      query = "#";
+      query = "";
       mode = "chat";
       aiError = null;
       setTimeout(() => inputEl?.focus(), 0);
@@ -289,7 +298,7 @@
       });
       activeRequestId = result.requestId;
       appendOptimisticMessages(result.threadId, result.assistantMessageId, content);
-      query = "#";
+      query = "";
       includeFocusedContext = false;
       await loadThreads();
     } catch (e) {
@@ -409,7 +418,7 @@
         class="search-input"
         bind:this={inputEl}
         bind:value={query}
-        placeholder={mode === "chat" ? "# Ask AI..." : "Search sessions..."}
+        placeholder={mode === "chat" ? "Ask AI..." : "Search sessions..."}
         onkeydown={handleKeydown}
       />
     </div>
@@ -438,7 +447,7 @@
             </div>
           {/each}
         {:else}
-          <div class="chat-empty">Type after # and press Enter.</div>
+          <div class="chat-empty">Type a message and press Enter.</div>
         {/if}
         {#if aiError}
           <div class="ai-error">{aiError}</div>
