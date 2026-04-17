@@ -246,6 +246,18 @@ pub async fn session_park(state: State<'_, AppState>, session_id: String) -> Res
 }
 
 #[tauri::command]
+pub async fn session_save_snapshot(
+    state: State<'_, AppState>,
+    session_id: String,
+    snapshot: String,
+) -> Result<(), String> {
+    let uuid = Uuid::parse_str(&session_id)
+        .map_err(|_| format!("invalid session id: '{}'", session_id))?;
+    let mut manager = state.lock().await;
+    manager.save_screen_snapshot(uuid, snapshot)
+}
+
+#[tauri::command]
 pub async fn session_reorder(
     state: State<'_, AppState>,
     session_ids: Vec<String>,

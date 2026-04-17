@@ -28,7 +28,7 @@
     isRenaming?: boolean;
     terminalConfig?: TerminalConfig;
     prefixKeyMatcher?: PrefixKeyMatcher;
-    onReady?: (api: { writeOutput: (data: string) => void; triggerResize: () => void; focus: () => void; blur: () => void }) => void;
+    onReady?: (api: { writeOutput: (data: string) => void; triggerResize: () => void; serialize: () => string; focus: () => void; blur: () => void }) => void;
     onclick?: () => void;
     ondragstart?: (e: DragEvent) => void;
     ondragover?: (e: DragEvent) => void;

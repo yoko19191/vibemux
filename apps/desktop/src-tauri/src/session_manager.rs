@@ -62,6 +62,7 @@ struct ManagedSession {
     pty: PtyHost,
     output_buffer: Arc<Mutex<OutputRingBuffer>>,
     thermal_state: Arc<Mutex<ThermalState>>,
+    screen_snapshot: Option<String>, // serialized xterm screen state saved on park
 }
 
 pub struct SessionManager {
@@ -176,6 +177,7 @@ impl SessionManager {
                 pty,
                 output_buffer,
                 thermal_state: shared_thermal,
+                screen_snapshot: None,
             },
         );
 
@@ -338,6 +340,15 @@ impl SessionManager {
         Ok(())
     }
 
+    pub fn save_screen_snapshot(&mut self, session_id: Uuid, snapshot: String) -> Result<(), String> {
+        let managed = self
+            .sessions
+            .get_mut(&session_id)
+            .ok_or_else(|| format!("session {} not found", session_id))?;
+        managed.screen_snapshot = Some(snapshot);
+        Ok(())
+    }
+
     pub fn recall_session(
         &mut self,
         session_id: Uuid,
@@ -377,35 +388,53 @@ impl SessionManager {
         self.workspace.hot_session_ids.push(session_id);
         self.workspace.focused_session_id = Some(session_id);
 
-        // Replay ring buffer to restore screen state, then frontend sends
-        // SIGWINCH via resize to refresh dynamic content (htop values, etc.)
+        // Prefer screen snapshot (exact screen state saved at park time) over
+        // ring buffer replay (incremental byte stream that may have lost early frames)
+        let snapshot = managed.screen_snapshot.take();
         let buffer = Arc::clone(&managed.output_buffer);
         let event_tx = self.event_tx.clone();
         let sid = session_id;
         tokio::spawn(async move {
-            let entries = {
-                let buf = buffer.lock().await;
-                buf.get_all()
-            };
-            if entries.is_empty() {
-                let _ = event_tx.send(MuxEvent::ReplayEnd { session_id: sid });
-                return;
-            }
-            let from_seq = entries.first().map(|e| e.seq).unwrap_or(0);
-            let to_seq = entries.last().map(|e| e.seq).unwrap_or(0);
-            let _ = event_tx.send(MuxEvent::ReplayStart {
-                session_id: sid,
-                from_seq,
-                to_seq,
-            });
-            for entry in entries {
+            if let Some(snap) = snapshot {
+                // Replay snapshot as a single chunk — it's already a complete screen state
+                let data = snap.into_bytes();
+                let _ = event_tx.send(MuxEvent::ReplayStart {
+                    session_id: sid,
+                    from_seq: 0,
+                    to_seq: 0,
+                });
                 let _ = event_tx.send(MuxEvent::ReplayChunk {
                     session_id: sid,
-                    data: entry.data,
-                    seq: entry.seq,
+                    data,
+                    seq: 0,
                 });
+                let _ = event_tx.send(MuxEvent::ReplayEnd { session_id: sid });
+            } else {
+                // Fallback: replay ring buffer
+                let entries = {
+                    let buf = buffer.lock().await;
+                    buf.get_all()
+                };
+                if entries.is_empty() {
+                    let _ = event_tx.send(MuxEvent::ReplayEnd { session_id: sid });
+                    return;
+                }
+                let from_seq = entries.first().map(|e| e.seq).unwrap_or(0);
+                let to_seq = entries.last().map(|e| e.seq).unwrap_or(0);
+                let _ = event_tx.send(MuxEvent::ReplayStart {
+                    session_id: sid,
+                    from_seq,
+                    to_seq,
+                });
+                for entry in entries {
+                    let _ = event_tx.send(MuxEvent::ReplayChunk {
+                        session_id: sid,
+                        data: entry.data,
+                        seq: entry.seq,
+                    });
+                }
+                let _ = event_tx.send(MuxEvent::ReplayEnd { session_id: sid });
             }
-            let _ = event_tx.send(MuxEvent::ReplayEnd { session_id: sid });
         });
 
         Ok(())

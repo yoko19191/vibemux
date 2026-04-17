@@ -5,6 +5,7 @@
   import { FitAddon } from "@xterm/addon-fit";
   import { WebglAddon } from "@xterm/addon-webgl";
   import { WebLinksAddon } from "@xterm/addon-web-links";
+  import { SerializeAddon } from "@xterm/addon-serialize";
   import { invoke } from "@tauri-apps/api/core";
   import { matchesPrefixKey } from "./keymap";
   import type { PrefixKeyMatcher } from "./keymap";
@@ -25,6 +26,7 @@
     onReady?: (api: {
       writeOutput: (data: string) => void;
       triggerResize: () => void;
+      serialize: () => string;
       focus: () => void;
       blur: () => void;
     }) => void;
@@ -36,6 +38,7 @@
   let containerEl: HTMLDivElement;
   let terminal: Terminal | null = null;
   let fitAddon: FitAddon | null = null;
+  let serializeAddon: SerializeAddon | null = null;
   let resizeObserver: ResizeObserver | null = null;
   let rendererType: 'webgl' | 'canvas' = $state('webgl');
 
@@ -91,6 +94,9 @@
       invoke("open_url", { url: uri }).catch(console.error);
     });
     terminal.loadAddon(webLinksAddon);
+
+    serializeAddon = new SerializeAddon();
+    terminal.loadAddon(serializeAddon);
 
     terminal.open(containerEl);
 
@@ -177,6 +183,7 @@
           invoke("session_resize", { sessionId, cols: dims.cols, rows: dims.rows }).catch(console.error);
         }
       },
+      serialize: () => serializeAddon?.serialize() ?? "",
       focus: () => terminal?.focus(),
       blur: () => terminal?.blur(),
     });

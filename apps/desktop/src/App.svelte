@@ -28,8 +28,10 @@
   let searchQuery = $state("");
   let showHelp = $state(false);
   let homeCwd = $state("/");
-  let terminalApis: Map<string, { writeOutput: (data: string) => void; triggerResize: () => void; focus: () => void; blur: () => void }> = new Map();
+  let terminalApis: Map<string, { writeOutput: (data: string) => void; triggerResize: () => void; serialize: () => string; focus: () => void; blur: () => void }> = new Map();
   let restoringSessionIds: Set<string> = $state(new Set());
+  // Buffer replay events that arrive before TerminalPane mounts
+  let pendingReplays: Map<string, { chunks: string[]; ended: boolean }> = new Map();
   let unlisten: (() => void) | null = null;
   let selectedShelfIdx: number | null = $state(null);
   let renamingSessionId: string | null = $state(null);
@@ -136,33 +138,35 @@
           focusedSessionId = hotSessions[0]?.id ?? null;
         }
       } else if (muxEvent.type === "replayStart") {
+        console.log("[vibemux] replayStart:", muxEvent.sessionId);
         sessions = sessions.map((s) =>
           s.id === muxEvent.sessionId ? { ...s, thermalState: "Hot" as const } : s
         );
         focusedSessionId = muxEvent.sessionId;
-        const api = terminalApis.get(muxEvent.sessionId);
-        if (api) {
-          onReplayStart(
-            muxEvent.sessionId,
-            api.writeOutput,
-            (active) => {
-              restoringSessionIds = new Set(
-                active
-                  ? [...restoringSessionIds, muxEvent.sessionId]
-                  : [...restoringSessionIds].filter((id) => id !== muxEvent.sessionId)
-              );
-            }
-          );
-        }
+
+        // Always buffer replay events — the thermalState change will trigger
+        // DeckPane remount, so the current terminalApis entry (if any) is stale
+        console.log("[vibemux] replayStart: buffering (waiting for new TerminalPane mount)");
+        pendingReplays.set(muxEvent.sessionId, { chunks: [], ended: false });
       } else if (muxEvent.type === "replayChunk") {
-        onReplayChunk(muxEvent.sessionId, muxEvent.data);
+        const pending = pendingReplays.get(muxEvent.sessionId);
+        console.log("[vibemux] replayChunk:", muxEvent.sessionId, "pending?", !!pending, "data length:", muxEvent.data.length);
+        if (pending) {
+          pending.chunks.push(muxEvent.data);
+        } else {
+          onReplayChunk(muxEvent.sessionId, muxEvent.data);
+        }
       } else if (muxEvent.type === "replayEnd") {
-        onReplayEnd(muxEvent.sessionId);
-        // After replay restores screen state, send SIGWINCH via resize
-        // so dynamic content (htop values, etc.) refreshes immediately
-        const api = terminalApis.get(muxEvent.sessionId);
-        if (api) {
-          api.triggerResize();
+        const pending = pendingReplays.get(muxEvent.sessionId);
+        console.log("[vibemux] replayEnd:", muxEvent.sessionId, "pending?", !!pending);
+        if (pending) {
+          pending.ended = true;
+        } else {
+          onReplayEnd(muxEvent.sessionId);
+          const api = terminalApis.get(muxEvent.sessionId);
+          if (api) {
+            api.triggerResize();
+          }
         }
       } else if (muxEvent.type === "attentionChanged") {
         sessions = sessions.map((s) =>
@@ -252,8 +256,35 @@
     await createInitialSession();
   }
 
-  function handleTerminalReady(sessionId: string, api: { writeOutput: (data: string) => void; triggerResize: () => void; focus: () => void; blur: () => void }) {
+  function handleTerminalReady(sessionId: string, api: { writeOutput: (data: string) => void; triggerResize: () => void; serialize: () => string; focus: () => void; blur: () => void }) {
+    console.log("[vibemux] handleTerminalReady:", sessionId);
     terminalApis.set(sessionId, api);
+
+    // Drain any replay events that arrived before this terminal mounted
+    const pending = pendingReplays.get(sessionId);
+    console.log("[vibemux] handleTerminalReady: pending?", !!pending, "chunks:", pending?.chunks.length, "ended:", pending?.ended);
+    if (pending) {
+      pendingReplays.delete(sessionId);
+      console.log("[vibemux] handleTerminalReady: draining buffered replay");
+      onReplayStart(
+        sessionId,
+        api.writeOutput,
+        (active) => {
+          restoringSessionIds = new Set(
+            active
+              ? [...restoringSessionIds, sessionId]
+              : [...restoringSessionIds].filter((id) => id !== sessionId)
+          );
+        }
+      );
+      for (const chunk of pending.chunks) {
+        onReplayChunk(sessionId, chunk);
+      }
+      if (pending.ended) {
+        onReplayEnd(sessionId);
+        api.triggerResize();
+      }
+    }
   }
 
   function requestNewSession() {
@@ -437,6 +468,14 @@
   async function parkCurrentSession() {
     if (!focusedSessionId) return;
     try {
+      // Capture screen snapshot before parking so recall can restore exact state
+      const api = terminalApis.get(focusedSessionId);
+      if (api) {
+        const snapshot = api.serialize();
+        if (snapshot) {
+          await invoke("session_save_snapshot", { sessionId: focusedSessionId, snapshot });
+        }
+      }
       await invoke("session_park", { sessionId: focusedSessionId });
     } catch (e) {
       console.error("Failed to park session:", e);
@@ -558,7 +597,16 @@
         onRenameConfirm={handleRenameConfirm}
         onRenameCancel={handleRenameCancel}
         onStartRename={(id) => { renamingSessionId = id; }}
-        onPark={(sessionId) => invoke("session_park", { sessionId }).catch(console.error)}
+        onPark={async (sessionId) => {
+          const api = terminalApis.get(sessionId);
+          if (api) {
+            const snapshot = api.serialize();
+            if (snapshot) {
+              await invoke("session_save_snapshot", { sessionId, snapshot }).catch(console.error);
+            }
+          }
+          invoke("session_park", { sessionId }).catch(console.error);
+        }}
         onClose={closeSessionById}
       />
     {:else if sessions.length > 0}
