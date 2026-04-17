@@ -18,6 +18,8 @@
 
 ---
 
+[\[中文\]](README_zh.md)
+
 Vibemux is not a plain terminal emulator, and not a tmux wrapper. It is designed for ADHD-friendly terminal workflows and Vibe Coding sessions where multiple shells, dev servers, tests, logs, and coding agents are running at the same time. It treats each terminal as a **session task** with a name, color identity, working directory, process state, and lifecycle state, so you can see what is active, what is detached, and what needs attention.
 
 ## Features
