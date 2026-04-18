@@ -1,7 +1,7 @@
 <script lang="ts">
   export interface ContextMenuItem {
     label?: string;
-    onClick?: () => void;
+    onClick?: () => void | Promise<unknown>;
     color?: string;
     disabled?: boolean;
     type?: "separator" | "submenu";
@@ -27,7 +27,7 @@
   function handleItemClick(item: ContextMenuItem) {
     if (item.disabled || item.type === "separator") return;
     if (item.type === "submenu") return; // handled by hover
-    item.onClick?.();
+    void Promise.resolve(item.onClick?.()).catch(console.error);
     onClose();
   }
 </script>

@@ -40,11 +40,13 @@
   let fitAddon: FitAddon | null = null;
   let serializeAddon: SerializeAddon | null = null;
   let resizeObserver: ResizeObserver | null = null;
+  let textareaPasteController: AbortController | null = null;
   let rendererType: 'webgl' | 'canvas' = $state('webgl');
 
   // Context menu state
   let contextMenu: { x: number; y: number } | null = $state(null);
   let hasSelection = $state(false);
+  let pasteConfirmation: { text: string; lineCount: number } | null = $state(null);
 
   function closeContextMenu() {
     contextMenu = null;
@@ -57,13 +59,71 @@
   }
 
   async function handlePaste() {
+    await pasteFromClipboard();
+    closeContextMenu();
+  }
+
+  async function pasteFromClipboard() {
     try {
       const text = await navigator.clipboard.readText();
-      if (text) invoke("session_write", { sessionId, data: text }).catch(console.error);
+      pasteText(text);
     } catch (e) {
       console.error("Paste failed:", e);
     }
-    closeContextMenu();
+  }
+
+  function pasteText(rawText: string, options: { allowUnsafeMultiline?: boolean } = {}) {
+    if (!terminal) return;
+    const text = stripFinalLineBreak(rawText);
+    if (!text) return;
+
+    const isMultiline = hasLineBreak(text);
+    if (isMultiline && !terminal.modes.bracketedPasteMode && !options.allowUnsafeMultiline) {
+      pasteConfirmation = { text, lineCount: countLines(text) };
+      return;
+    }
+
+    terminal.paste(text);
+    terminal.focus();
+  }
+
+  function stripFinalLineBreak(text: string): string {
+    if (text.endsWith("\r\n")) return text.slice(0, -2);
+    if (text.endsWith("\n") || text.endsWith("\r")) return text.slice(0, -1);
+    return text;
+  }
+
+  function hasLineBreak(text: string): boolean {
+    return /\r\n|\r|\n/.test(text);
+  }
+
+  function countLines(text: string): number {
+    return text.split(/\r\n|\r|\n/).length;
+  }
+
+  function handleNativePaste(e: ClipboardEvent) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const text = e.clipboardData?.getData("text/plain") ?? "";
+    pasteText(text);
+  }
+
+  function confirmPaste() {
+    if (!pasteConfirmation) return;
+    pasteText(pasteConfirmation.text, { allowUnsafeMultiline: true });
+    pasteConfirmation = null;
+  }
+
+  function cancelPaste() {
+    pasteConfirmation = null;
+    terminal?.focus();
+  }
+
+  function handlePasteConfirmKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      cancelPaste();
+    }
   }
 
   function handleClearScreen() {
@@ -100,10 +160,29 @@
 
     terminal.open(containerEl);
 
-    // Let the prefix key bypass xterm so it bubbles to the window handler
+    textareaPasteController = new AbortController();
+    terminal.textarea?.addEventListener("paste", handleNativePaste, {
+      capture: true,
+      signal: textareaPasteController.signal,
+    });
+
+    // Let global shortcuts and clipboard operations bypass xterm's default key handling.
     terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
       if (prefixKeyMatcher && matchesPrefixKey(e, prefixKeyMatcher)) {
         return false; // don't process — let it propagate to window
+      }
+      const mod = navigator.platform.toUpperCase().includes("MAC") ? e.metaKey : e.ctrlKey;
+      const key = e.key.toLowerCase();
+      if (mod && key === "c" && hasSelection) {
+        e.preventDefault();
+        handleCopy();
+        return false;
+      }
+      if (mod && key === "v") {
+        e.preventDefault();
+        e.stopPropagation();
+        void pasteFromClipboard();
+        return false;
       }
       return true;
     });
@@ -201,20 +280,10 @@
   });
 
   onDestroy(() => {
+    textareaPasteController?.abort();
     resizeObserver?.disconnect();
     terminal?.dispose();
   });
-
-  function handleKeydown(e: KeyboardEvent) {
-    const mod = navigator.platform.toUpperCase().includes("MAC") ? e.metaKey : e.ctrlKey;
-    if (mod && e.key === "c" && hasSelection) {
-      e.preventDefault();
-      handleCopy();
-    } else if (mod && e.key === "v") {
-      e.preventDefault();
-      handlePaste();
-    }
-  }
 
   function handleContextMenu(e: MouseEvent) {
     e.preventDefault();
@@ -235,7 +304,6 @@
 <div
   class="terminal-wrapper"
   bind:this={containerEl}
-  onkeydown={handleKeydown}
   oncontextmenu={handleContextMenu}
 ></div>
 
@@ -247,9 +315,116 @@
   />
 {/if}
 
+{#if pasteConfirmation}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="paste-confirm-backdrop" onclick={cancelPaste}>
+    <div
+      class="paste-confirm-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="paste-confirm-title"
+      tabindex="-1"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={handlePasteConfirmKeydown}
+    >
+      <h2 id="paste-confirm-title">Paste multiple lines?</h2>
+      <p>
+        This paste contains {pasteConfirmation.lineCount} lines. Bracketed paste is not active, so
+        the shell may execute commands as they are pasted.
+      </p>
+      <div class="paste-preview">{pasteConfirmation.text}</div>
+      <div class="paste-confirm-actions">
+        <button class="confirm-button secondary" type="button" onclick={cancelPaste}>Cancel</button>
+        <button class="confirm-button primary" type="button" onclick={confirmPaste}>Continue Paste</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
   .terminal-wrapper {
     width: 100%;
     height: 100%;
+  }
+
+  .paste-confirm-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 300;
+  }
+
+  .paste-confirm-dialog {
+    width: min(520px, calc(100vw - 2rem));
+    background: #191919;
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    color: #d9d4c7;
+    font-family: system-ui, -apple-system, sans-serif;
+    padding: 1rem;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+  }
+
+  .paste-confirm-dialog h2 {
+    margin: 0 0 0.5rem;
+    font-size: 1rem;
+    font-weight: 650;
+  }
+
+  .paste-confirm-dialog p {
+    margin: 0 0 0.85rem;
+    color: #aaa;
+    font-size: 0.85rem;
+    line-height: 1.4;
+  }
+
+  .paste-preview {
+    max-height: 180px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: #101010;
+    border: 1px solid #303030;
+    border-radius: 6px;
+    padding: 0.75rem;
+    color: #d9d4c7;
+    font-family: Menlo, Monaco, "Courier New", monospace;
+    font-size: 0.78rem;
+    line-height: 1.45;
+  }
+
+  .paste-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 1rem;
+  }
+
+  .confirm-button {
+    border: 1px solid #3a3a3a;
+    border-radius: 6px;
+    padding: 0.45rem 0.75rem;
+    font: inherit;
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+
+  .confirm-button.secondary {
+    background: #222;
+    color: #d9d4c7;
+  }
+
+  .confirm-button.primary {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: #fff;
+  }
+
+  .confirm-button:hover {
+    filter: brightness(1.08);
   }
 </style>
