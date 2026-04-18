@@ -7,7 +7,6 @@
   import Shelf from "./lib/Shelf.svelte";
   import NewSessionPanel from "./lib/NewSessionPanel.svelte";
   import SettingsPanel from "./lib/SettingsPanel.svelte";
-  import SessionSearch from "./lib/SessionSearch.svelte";
   import HelpOverlay from "./lib/HelpOverlay.svelte";
   import Titlebar from "./lib/Titlebar.svelte";
   import Onboarding from "./lib/Onboarding.svelte";
@@ -25,6 +24,10 @@
   let showSettings = $state(false);
   let settingsInitialTab: "terminal" | "theme" | "layout" | "keys" | "ai" = $state("terminal");
   let showSearch = $state(false);
+  type SessionSearchComponentType = typeof import("./lib/SessionSearch.svelte").default;
+  let SessionSearchComponent: SessionSearchComponentType | null = $state(null);
+  let sessionSearchLoading = $state(false);
+  let sessionSearchLoadError: string | null = $state(null);
   let searchQuery = $state("");
   let showHelp = $state(false);
   let homeCwd = $state("/");
@@ -109,6 +112,38 @@
       pendingReplays.set(sessionId, pending);
     }
     return pending;
+  }
+
+  async function loadSessionSearch() {
+    if (SessionSearchComponent || sessionSearchLoading) return;
+    sessionSearchLoading = true;
+    sessionSearchLoadError = null;
+    try {
+      const module = await import("./lib/SessionSearch.svelte");
+      SessionSearchComponent = module.default;
+    } catch (e) {
+      sessionSearchLoadError = String(e);
+    } finally {
+      sessionSearchLoading = false;
+    }
+  }
+
+  function openSearch() {
+    showSearch = true;
+    navMode = false;
+    void loadSessionSearch();
+  }
+
+  function closeSearch() {
+    showSearch = false;
+  }
+
+  function toggleSearch() {
+    if (showSearch) {
+      closeSearch();
+    } else {
+      openSearch();
+    }
   }
 
   // Dynamic window title
@@ -361,8 +396,7 @@
     const isMac = navigator.platform.toUpperCase().includes("MAC");
     if ((isMac ? e.metaKey : e.ctrlKey) && e.key === "k") {
       e.preventDefault();
-      showSearch = !showSearch;
-      navMode = false;
+      toggleSearch();
       return;
     }
 
@@ -442,8 +476,7 @@
         }
         break;
       case "/":
-        showSearch = true;
-        navMode = false;
+        openSearch();
         e.preventDefault();
         break;
       case "?":
@@ -455,7 +488,7 @@
   }
 
   function handleSearchSelect(sessionId: string, thermal: "Hot" | "Warm") {
-    showSearch = false;
+    closeSearch();
     if (thermal === "Hot") {
       handleFocusSession(sessionId);
     } else {
@@ -616,7 +649,7 @@
   <Titlebar
     prefixKey={prefixKeyDisplay}
     onNewSession={requestNewSession}
-    onSearch={() => { showSearch = true; navMode = false; }}
+    onSearch={openSearch}
     onSettings={() => {
       settingsInitialTab = "terminal";
       showSettings = true;
@@ -726,15 +759,25 @@
   {/if}
 
   {#if showSearch}
-    <SessionSearch
-      sessions={sessions}
-      query={searchQuery}
-      onQueryChange={(value) => (searchQuery = value)}
-      onSelect={handleSearchSelect}
-      onNewSession={() => { showSearch = false; requestNewSession(); }}
-      onKillSession={killSessionById}
-      onClose={() => (showSearch = false)}
-    />
+    {#if SessionSearchComponent}
+      <SessionSearchComponent
+        sessions={sessions}
+        query={searchQuery}
+        onQueryChange={(value) => (searchQuery = value)}
+        onSelect={handleSearchSelect}
+        onNewSession={() => { closeSearch(); requestNewSession(); }}
+        onKillSession={killSessionById}
+        onClose={closeSearch}
+      />
+    {:else if sessionSearchLoadError}
+      <div class="search-load-error">
+        <div>Could not load search.</div>
+        <button onclick={loadSessionSearch}>Retry</button>
+        <button onclick={closeSearch}>Close</button>
+      </div>
+    {:else}
+      <div class="search-loading">Loading search...</div>
+    {/if}
   {/if}
 
   {#if showHelp}
@@ -797,6 +840,39 @@
     color: #d9d4c7;
     font-family: system-ui, -apple-system, sans-serif;
     font-size: 1rem;
+  }
+
+  .search-loading,
+  .search-load-error {
+    position: fixed;
+    top: 15vh;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 200;
+    width: min(560px, 92vw);
+    min-height: 88px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    color: #d9d4c7;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 0.85rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  }
+
+  .search-load-error button {
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
+    background: #222;
+    color: #d9d4c7;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.75rem;
+    padding: 0.3rem 0.55rem;
   }
 
   .nav-indicator {

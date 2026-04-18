@@ -14,6 +14,9 @@ use crate::config::{ConfigState, UserConfig};
 use crate::models::{AttentionState, ProcessState, Session, ThermalState};
 
 const MAX_CONTEXT_BYTES: usize = 24 * 1024;
+const MODEL_REQUEST_TIMEOUT_SECS: u64 = 20;
+const AI_CONNECT_TIMEOUT_SECS: u64 = 10;
+const AI_STREAM_READ_TIMEOUT_SECS: u64 = 60;
 
 pub type AiState = Arc<Mutex<AiStore>>;
 
@@ -276,7 +279,11 @@ pub async fn ai_list_models(config_state: State<'_, ConfigState>) -> Result<Vec<
         return Err("AI API Key is required".to_string());
     }
     let url = v1_url(&ai.base_url, "models");
-    let value: serde_json::Value = reqwest::Client::new()
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(MODEL_REQUEST_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| format!("failed to create AI client: {}", e))?;
+    let value: serde_json::Value = client
         .get(url)
         .bearer_auth(ai.api_key)
         .send()
@@ -431,7 +438,27 @@ async fn stream_chat_completion(
     };
 
     let body = build_chat_body(&cfg, &thread, focused_context);
-    let result = reqwest::Client::new()
+    let client = match reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(AI_CONNECT_TIMEOUT_SECS))
+        .read_timeout(Duration::from_secs(AI_STREAM_READ_TIMEOUT_SECS))
+        .build()
+    {
+        Ok(client) => client,
+        Err(e) => {
+            emit_error(
+                &app,
+                &ai_state,
+                &request_id,
+                &thread_id,
+                &assistant_message_id,
+                format!("failed to create AI client: {}", e),
+                String::new(),
+            )
+            .await;
+            return;
+        }
+    };
+    let result = client
         .post(v1_url(&cfg.ai.base_url, "chat/completions"))
         .bearer_auth(cfg.ai.api_key)
         .json(&body)

@@ -13,5 +13,14 @@ export default defineConfig({
     target: "esnext",
     minify: !process.env.TAURI_DEBUG ? "esbuild" : false,
     sourcemap: !!process.env.TAURI_DEBUG,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("/node_modules/@xterm/")) return "xterm";
+          if (id.includes("/node_modules/@tauri-apps/")) return "tauri";
+          if (id.includes("/node_modules/")) return "vendor";
+        },
+      },
+    },
   },
 });
