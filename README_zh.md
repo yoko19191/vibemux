@@ -1,10 +1,11 @@
+<h1 align="center">
+  <img src="assets/icon.png" alt="Vibemux 图标" width="48" height="48" style="vertical-align: middle;">
+  <span style="vertical-align: middle;">Vibemux</span>
+</h1>
+
 <p align="center">
-  <img src="assets/icon.png" alt="Vibemux 图标" width="96" height="96">
+  <video src="assets/demo.mp4" controls muted loop playsinline width="100%"></video>
 </p>
-
-<h1 align="center">Vibemux</h1>
-
-![Vibemux demo](assets/demo.gif)
 
 <p align="center">
   为多动症友好的多任务工作流和 Vibe Coding 场景设计的键盘优先、跨平台 GUI 终端多路复用器。基于 Tauri、Rust、Svelte 和 xterm.js 构建。

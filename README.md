@@ -1,10 +1,11 @@
+<h1 align="center">
+  <img src="assets/icon.png" alt="Vibemux icon" width="48" height="48" style="vertical-align: middle;">
+  <span style="vertical-align: middle;">Vibemux</span>
+</h1>
+
 <p align="center">
-  <img src="assets/icon.png" alt="Vibemux icon" width="96" height="96">
+  <video src="assets/demo.mp4" controls muted loop playsinline width="100%"></video>
 </p>
-
-<h1 align="center">Vibemux</h1>
-
-![Vibemux demo](assets/demo.gif)
 
 <p align="center">
   A keyboard-first, cross-platform terminal multiplexer for ADHD-friendly multitasking and Vibe Coding workflows. Built with Tauri, Rust, Svelte, and xterm.js.
