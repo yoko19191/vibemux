@@ -4,7 +4,7 @@ use tauri::{async_runtime, AppHandle, Emitter};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use crate::commands::SessionSnapshot;
+use crate::commands::{AppState, SessionSnapshot};
 use crate::models::ProcessState;
 use crate::session_manager::MuxEvent;
 
@@ -51,7 +51,11 @@ pub enum FrontendEvent {
 
 const BATCH_INTERVAL_MS: u64 = 12;
 
-pub fn start_event_bridge(app_handle: AppHandle, mut event_rx: mpsc::UnboundedReceiver<MuxEvent>) {
+pub fn start_event_bridge(
+    app_handle: AppHandle,
+    state: AppState,
+    mut event_rx: mpsc::UnboundedReceiver<MuxEvent>,
+) {
     async_runtime::spawn(async move {
         let mut batch: Vec<FrontendEvent> = Vec::new();
         let mut interval = tokio::time::interval(Duration::from_millis(BATCH_INTERVAL_MS));
@@ -61,6 +65,7 @@ pub fn start_event_bridge(app_handle: AppHandle, mut event_rx: mpsc::UnboundedRe
                 event = event_rx.recv() => {
                     match event {
                         Some(mux_event) => {
+                            apply_manager_side_effect(&state, &mux_event).await;
                             let fe = convert_event(mux_event);
                             batch.push(fe);
                         }
@@ -77,6 +82,26 @@ pub fn start_event_bridge(app_handle: AppHandle, mut event_rx: mpsc::UnboundedRe
             }
         }
     });
+}
+
+async fn apply_manager_side_effect(state: &AppState, event: &MuxEvent) {
+    match event {
+        MuxEvent::AttentionChanged {
+            session_id,
+            attention_state,
+        } => {
+            let mut manager = state.lock().await;
+            manager.update_attention_state(*session_id, attention_state.clone());
+        }
+        MuxEvent::SessionExited {
+            session_id,
+            process_state,
+        } => {
+            let mut manager = state.lock().await;
+            manager.handle_session_exit(*session_id, process_state.clone());
+        }
+        _ => {}
+    }
 }
 
 fn convert_event(event: MuxEvent) -> FrontendEvent {

@@ -16,6 +16,7 @@
     fontFamily?: string;
     fontSize?: number;
     lineHeight?: number;
+    scrollback?: number;
     theme?: Record<string, string>;
   }
 
@@ -133,7 +134,7 @@
 
   onMount(() => {
     terminal = new Terminal({
-      scrollback: 10_000,
+      scrollback: terminalConfig?.scrollback ?? 10_000,
       theme: terminalConfig?.theme ?? {
         background: "#111111",
         foreground: "#d9d4c7",
@@ -274,6 +275,7 @@
     if (terminalConfig.fontFamily) terminal.options.fontFamily = terminalConfig.fontFamily;
     if (terminalConfig.fontSize) terminal.options.fontSize = terminalConfig.fontSize;
     if (terminalConfig.lineHeight) terminal.options.lineHeight = terminalConfig.lineHeight;
+    if (terminalConfig.scrollback) terminal.options.scrollback = terminalConfig.scrollback;
     if (terminalConfig.theme) terminal.options.theme = terminalConfig.theme;
     // Re-fit after font/size changes
     fitAddon?.fit();

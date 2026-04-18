@@ -11,6 +11,7 @@ interface ReplayState {
   timer: ReturnType<typeof setTimeout> | null;
   restoringTimer: ReturnType<typeof setTimeout> | null;
   isReplaying: boolean;
+  endRequested: boolean;
   onRestoring: (active: boolean) => void;
   writeOutput: (data: string) => void;
 }
@@ -30,6 +31,7 @@ export function onReplayStart(
     timer: null,
     restoringTimer: null,
     isReplaying: true,
+    endRequested: false,
     onRestoring,
     writeOutput,
   };
@@ -63,17 +65,12 @@ export function onReplayEnd(sessionId: string) {
   const state = activeReplays.get(sessionId);
   if (!state) return;
 
-  // Drain remaining chunks synchronously (they're already small)
-  if (state.timer) {
-    clearTimeout(state.timer);
-    state.timer = null;
+  state.endRequested = true;
+  if (state.chunks.length === 0) {
+    finishReplay(sessionId, state);
+  } else if (!state.timer) {
+    scheduleNextChunk(sessionId, state);
   }
-  for (const chunk of state.chunks) {
-    state.writeOutput(chunk);
-  }
-  state.chunks = [];
-
-  finishReplay(sessionId, state);
 }
 
 export function cancelReplay(sessionId: string) {
@@ -98,6 +95,8 @@ function scheduleNextChunk(sessionId: string, state: ReplayState) {
     }
     if (state.chunks.length > 0) {
       scheduleNextChunk(sessionId, state);
+    } else if (state.endRequested) {
+      finishReplay(sessionId, state);
     }
   }, 0);
 }

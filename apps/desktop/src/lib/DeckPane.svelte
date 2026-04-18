@@ -11,6 +11,7 @@
     fontFamily?: string;
     fontSize?: number;
     lineHeight?: number;
+    scrollback?: number;
     theme?: Record<string, string>;
   }
 
@@ -27,6 +28,7 @@
     zIndex?: number;
     isRenaming?: boolean;
     terminalConfig?: TerminalConfig;
+    animationMs?: number;
     prefixKeyMatcher?: PrefixKeyMatcher;
     onReady?: (api: { writeOutput: (data: string) => void; triggerResize: () => void; serialize: () => string; focus: () => void; blur: () => void }) => void;
     onclick?: () => void;
@@ -38,14 +40,15 @@
     onStartRename?: () => void;
     onPark?: () => void;
     onClose?: () => void;
+    onKill?: () => void;
   }
 
   let {
     sessionId, sessionName, sessionCwd = "", terminalTitle = "", color, processState, isFocused, width,
     left = 0, zIndex = 1,
-    isRenaming = false, terminalConfig, prefixKeyMatcher,
+    isRenaming = false, terminalConfig, animationMs = 150, prefixKeyMatcher,
     onReady, onclick, ondragstart, ondragover, ondrop,
-    onRenameConfirm, onRenameCancel, onStartRename, onPark, onClose,
+    onRenameConfirm, onRenameCancel, onStartRename, onPark, onClose, onKill,
   }: Props = $props();
 
   let displayName = $derived(sessionName || terminalTitle);
@@ -130,7 +133,7 @@
       },
       { type: "separator" },
       { label: "Close", onClick: () => onClose?.() },
-      { label: "Kill", color: "#ef4444", onClick: () => invoke("session_kill", { sessionId }).catch(console.error) },
+      { label: "Kill", color: "#ef4444", onClick: () => onKill?.() },
     ];
   }
 
@@ -153,7 +156,7 @@
       },
       { type: "separator" },
       { label: "Close", onClick: () => onClose?.() },
-      { label: "Kill", color: "#ef4444", onClick: () => invoke("session_kill", { sessionId }).catch(console.error) },
+      { label: "Kill", color: "#ef4444", onClick: () => onKill?.() },
     ];
   }
 </script>
@@ -165,7 +168,7 @@
   class:drag-over={dragOver}
   class:is-busy={isBusy}
   data-session-id={sessionId}
-  style="width: {width}px; left: {left}px; z-index: {zIndex}; border: {borderStyle}; box-shadow: {boxShadow}; filter: {filter}; --border-color: {borderColor};"
+  style="width: {width}px; left: {left}px; z-index: {zIndex}; border: {borderStyle}; box-shadow: {boxShadow}; filter: {filter}; --border-color: {borderColor}; --pane-transition-ms: {animationMs}ms;"
   onclick={onclick}
   onmouseenter={() => (isHovered = true)}
   onmouseleave={() => (isHovered = false)}
@@ -235,7 +238,7 @@
     height: 100%;
     box-sizing: border-box;
     overflow: hidden;
-    transition: width 150ms ease-out, left 150ms ease-out, opacity 150ms ease-out, filter 150ms ease-out;
+    transition: width var(--pane-transition-ms) ease-out, left var(--pane-transition-ms) ease-out, opacity var(--pane-transition-ms) ease-out, filter var(--pane-transition-ms) ease-out;
     display: flex;
     flex-direction: column;
     border-radius: 4px;

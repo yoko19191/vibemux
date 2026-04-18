@@ -20,6 +20,7 @@ pub fn run() {
     let (event_tx, event_rx) = mpsc::unbounded_channel();
     let manager = SessionManager::new(event_tx);
     let state: AppState = Arc::new(Mutex::new(manager));
+    let event_state = state.clone();
     let (cfg, cfg_error) = load_config_with_error();
     let config_state: ConfigState = Arc::new(std::sync::Mutex::new(cfg));
     let config_error_state: ConfigErrorState = Arc::new(std::sync::Mutex::new(cfg_error));
@@ -32,6 +33,7 @@ pub fn run() {
         .manage(ai_state)
         .invoke_handler(tauri::generate_handler![
             commands::session_create,
+            commands::session_get,
             commands::session_write,
             commands::session_resize,
             commands::session_focus,
@@ -58,9 +60,9 @@ pub fn run() {
             ai::ai_send_message,
             ai::ai_get_focused_context,
         ])
-        .setup(|app| {
+        .setup(move |app| {
             let handle = app.handle().clone();
-            events::start_event_bridge(handle, event_rx);
+            events::start_event_bridge(handle, event_state.clone(), event_rx);
             Ok(())
         })
         .run(tauri::generate_context!())

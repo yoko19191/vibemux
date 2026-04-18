@@ -74,11 +74,13 @@ pub async fn session_create(
         "[vibemux] session_create called: name={}, cwd={}, type={}",
         payload.name, payload.cwd, payload.command_type
     );
+    let cfg = config_state.lock().map_err(|e| e.to_string())?.clone();
     let command = match payload.command_type.as_str() {
         "shell" => {
             let shell = payload
                 .shell
-                .unwrap_or_else(|| std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into()));
+                .filter(|shell| !shell.trim().is_empty())
+                .unwrap_or_else(|| cfg.shell.default.clone());
             eprintln!("[vibemux] shell={}", shell);
             SessionCommand::Shell { shell }
         }
@@ -98,15 +100,23 @@ pub async fn session_create(
     };
 
     eprintln!("[vibemux] acquiring lock...");
-    let max_hot_sessions = config_state
-        .lock()
-        .map_err(|e| e.to_string())?
-        .layout
-        .max_hot_sessions as usize;
+    let max_hot_sessions = cfg.layout.max_hot_sessions as usize;
+    let replay_buffer_lines = cfg.terminal.replay_buffer_lines as usize;
+    let replay_buffer_bytes = (cfg.terminal.replay_buffer_mb as usize)
+        .saturating_mul(1024)
+        .saturating_mul(1024);
     let mut manager = state.lock().await;
     eprintln!("[vibemux] lock acquired, creating session...");
-    let session_id =
-        manager.create_session(payload.name, payload.cwd, command, 80, 24, max_hot_sessions)?;
+    let session_id = manager.create_session(
+        payload.name,
+        payload.cwd,
+        command,
+        80,
+        24,
+        max_hot_sessions,
+        replay_buffer_lines,
+        replay_buffer_bytes,
+    )?;
     eprintln!("[vibemux] session created: {}", session_id);
 
     let session = manager
@@ -116,6 +126,20 @@ pub async fn session_create(
     let snap = session_to_snapshot(session);
     eprintln!("[vibemux] returning snapshot: {:?}", snap);
     Ok(snap)
+}
+
+#[tauri::command]
+pub async fn session_get(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<SessionSnapshot, String> {
+    let uuid = Uuid::parse_str(&session_id)
+        .map_err(|_| format!("invalid session id: '{}'", session_id))?;
+    let manager = state.lock().await;
+    let session = manager
+        .get_session(uuid)
+        .ok_or_else(|| format!("session {} not found", uuid))?;
+    Ok(session_to_snapshot(session))
 }
 
 #[tauri::command]

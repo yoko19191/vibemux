@@ -10,7 +10,13 @@
     fontFamily?: string;
     fontSize?: number;
     lineHeight?: number;
+    scrollback?: number;
     theme?: Record<string, string>;
+  }
+
+  interface LayoutConfig {
+    focusedPaneWidth: number;
+    animationMs: number;
   }
 
   interface Props {
@@ -18,6 +24,7 @@
     focusedSessionId: string | null;
     renamingSessionId?: string | null;
     terminalConfig?: TerminalConfig;
+    layoutConfig?: LayoutConfig;
     prefixKeyMatcher?: PrefixKeyMatcher;
     onTerminalReady?: (sessionId: string, api: { writeOutput: (data: string) => void; triggerResize: () => void; serialize: () => string; focus: () => void; blur: () => void }) => void;
     onFocusSession?: (sessionId: string) => void;
@@ -26,14 +33,15 @@
     onStartRename?: (sessionId: string) => void;
     onPark?: (sessionId: string) => void;
     onClose?: (sessionId: string) => void;
+    onKill?: (sessionId: string) => void;
   }
 
   let {
     sessions, focusedSessionId,
-    renamingSessionId = null, terminalConfig, prefixKeyMatcher,
+    renamingSessionId = null, terminalConfig, layoutConfig = { focusedPaneWidth: 0.6, animationMs: 150 }, prefixKeyMatcher,
     onTerminalReady, onFocusSession,
     onRenameConfirm, onRenameCancel, onStartRename,
-    onPark, onClose,
+    onPark, onClose, onKill,
   }: Props = $props();
 
   let containerEl: HTMLDivElement;
@@ -46,6 +54,7 @@
       containerWidth,
       sessions.map((s) => s.id),
       focusedSessionId,
+      { focusedPaneWidth: layoutConfig.focusedPaneWidth },
     ),
   );
 
@@ -144,6 +153,7 @@
       zIndex={layout.zIndex}
       isRenaming={renamingSessionId === layout.sessionId}
       {terminalConfig}
+      animationMs={layoutConfig.animationMs}
       {prefixKeyMatcher}
       onReady={(api) => onTerminalReady?.(layout.sessionId, api)}
       onclick={() => onFocusSession?.(layout.sessionId)}
@@ -155,6 +165,7 @@
       onStartRename={() => onStartRename?.(layout.sessionId)}
       onPark={() => onPark?.(layout.sessionId)}
       onClose={() => onClose?.(layout.sessionId)}
+      onKill={() => onKill?.(layout.sessionId)}
     />
   {/each}
 </div>

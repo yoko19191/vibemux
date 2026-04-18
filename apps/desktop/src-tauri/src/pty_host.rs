@@ -1,6 +1,7 @@
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use std::io::{Read, Write};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -27,6 +28,7 @@ pub struct PtyHost {
     master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     child_pid: Option<u32>,
+    exited: Arc<AtomicBool>,
     _output_handle: tokio::task::JoinHandle<()>,
     _exit_handle: tokio::task::JoinHandle<()>,
 }
@@ -116,6 +118,8 @@ impl PtyHost {
         });
 
         // Exit status monitor
+        let exited = Arc::new(AtomicBool::new(false));
+        let exited_for_wait = Arc::clone(&exited);
         let exit_handle = tokio::task::spawn_blocking(move || {
             let status = match child.wait() {
                 Ok(exit) => {
@@ -128,6 +132,7 @@ impl PtyHost {
                 }
                 Err(_) => PtyExitStatus::Killed,
             };
+            exited_for_wait.store(true, Ordering::SeqCst);
             let _ = exit_tx.send(status);
         });
 
@@ -135,6 +140,7 @@ impl PtyHost {
             master: Arc::new(Mutex::new(pair.master)),
             writer: Arc::new(Mutex::new(writer)),
             child_pid,
+            exited,
             _output_handle: output_handle,
             _exit_handle: exit_handle,
         })
@@ -160,20 +166,34 @@ impl PtyHost {
     }
 
     pub fn kill(&self) -> Result<(), PtyError> {
-        self.send_signal(libc::SIGKILL)
+        let result = self.send_signal(libc::SIGKILL);
+        self.exited.store(true, Ordering::SeqCst);
+        result
     }
 
     pub async fn graceful_close(&self, timeout_ms: u64) -> Result<(), PtyError> {
-        // Send SIGHUP first
-        if self.send_signal(libc::SIGHUP).is_ok() {
-            tokio::time::sleep(std::time::Duration::from_millis(timeout_ms)).await;
+        let half_timeout = timeout_ms / 2;
+        let _ = self.send_signal(libc::SIGHUP);
+        tokio::time::sleep(std::time::Duration::from_millis(half_timeout)).await;
+
+        if !self.exited.load(Ordering::SeqCst) {
+            let _ = self.send_signal(libc::SIGTERM);
+            tokio::time::sleep(std::time::Duration::from_millis(
+                timeout_ms.saturating_sub(half_timeout),
+            ))
+            .await;
         }
-        // Force kill if still alive
-        let _ = self.kill();
+
+        if !self.exited.load(Ordering::SeqCst) {
+            let _ = self.kill();
+        }
         Ok(())
     }
 
     fn send_signal(&self, signal: i32) -> Result<(), PtyError> {
+        if self.exited.load(Ordering::SeqCst) {
+            return Ok(());
+        }
         if let Some(pid) = self.child_pid {
             unsafe {
                 libc::kill(pid as i32, signal);

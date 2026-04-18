@@ -62,6 +62,7 @@ struct ManagedSession {
     pty: PtyHost,
     output_buffer: Arc<Mutex<OutputRingBuffer>>,
     thermal_state: Arc<Mutex<ThermalState>>,
+    attention_state: Arc<Mutex<AttentionState>>,
     screen_snapshot: Option<String>, // serialized xterm screen state saved on park
 }
 
@@ -99,6 +100,8 @@ impl SessionManager {
         cols: u16,
         rows: u16,
         max_hot_sessions: usize,
+        replay_buffer_lines: usize,
+        replay_buffer_bytes: usize,
     ) -> Result<Uuid, String> {
         let max_hot_sessions = max_hot_sessions.max(1);
         if self.workspace.hot_session_ids.len() >= max_hot_sessions {
@@ -141,7 +144,10 @@ impl SessionManager {
         self.workspace.hot_session_ids.push(session_id);
         self.workspace.focused_session_id = Some(session_id);
 
-        let output_buffer = Arc::new(Mutex::new(OutputRingBuffer::new()));
+        let output_buffer = Arc::new(Mutex::new(OutputRingBuffer::with_limits(
+            replay_buffer_lines.max(1),
+            replay_buffer_bytes.max(1024),
+        )));
         let shared_thermal = Arc::new(Mutex::new(session.thermal_state.clone()));
         let shared_attention = Arc::new(Mutex::new(session.attention_state.clone()));
 
@@ -177,6 +183,7 @@ impl SessionManager {
                 pty,
                 output_buffer,
                 thermal_state: shared_thermal,
+                attention_state: shared_attention,
                 screen_snapshot: None,
             },
         );
@@ -219,6 +226,16 @@ impl SessionManager {
         if let Some(managed) = self.sessions.get_mut(&session_id) {
             managed.session.process_state = state;
             managed.session.updated_at = Utc::now();
+        }
+    }
+
+    pub fn update_attention_state(&mut self, session_id: Uuid, state: AttentionState) {
+        if let Some(managed) = self.sessions.get_mut(&session_id) {
+            managed.session.attention_state = state.clone();
+            managed.session.updated_at = Utc::now();
+            if let Ok(mut attention) = managed.attention_state.try_lock() {
+                *attention = state;
+            }
         }
     }
 
@@ -271,26 +288,37 @@ impl SessionManager {
     pub fn close_session(&mut self, session_id: Uuid) -> Result<(), String> {
         let managed = self
             .sessions
-            .get(&session_id)
+            .remove(&session_id)
             .ok_or_else(|| format!("session {} not found", session_id))?;
 
-        // Send SIGHUP for graceful close
-        let _ = managed.pty.kill(); // Best effort — will be force-killed by timeout in caller
         self.remove_session_from_workspace(session_id);
-        self.sessions.remove(&session_id);
+        tokio::spawn(async move {
+            let _ = managed.pty.graceful_close(800).await;
+        });
         Ok(())
     }
 
     pub fn kill_session(&mut self, session_id: Uuid) -> Result<(), String> {
         let managed = self
             .sessions
-            .get(&session_id)
+            .remove(&session_id)
             .ok_or_else(|| format!("session {} not found", session_id))?;
 
         let _ = managed.pty.kill();
         self.remove_session_from_workspace(session_id);
-        self.sessions.remove(&session_id);
         Ok(())
+    }
+
+    pub fn handle_session_exit(&mut self, session_id: Uuid, process_state: ProcessState) -> bool {
+        let Some(mut managed) = self.sessions.remove(&session_id) else {
+            return false;
+        };
+
+        managed.session.process_state = process_state.clone();
+        managed.session.attention_state = attention_for_process_state(&process_state);
+        managed.session.updated_at = Utc::now();
+        self.remove_session_from_workspace(session_id);
+        true
     }
 
     fn remove_session_from_workspace(&mut self, session_id: Uuid) {
@@ -340,7 +368,11 @@ impl SessionManager {
         Ok(())
     }
 
-    pub fn save_screen_snapshot(&mut self, session_id: Uuid, snapshot: String) -> Result<(), String> {
+    pub fn save_screen_snapshot(
+        &mut self,
+        session_id: Uuid,
+        snapshot: String,
+    ) -> Result<(), String> {
         let managed = self
             .sessions
             .get_mut(&session_id)
@@ -377,9 +409,13 @@ impl SessionManager {
             .ok_or_else(|| format!("session {} not found", session_id))?;
 
         managed.session.thermal_state = ThermalState::Hot;
+        managed.session.attention_state = AttentionState::Normal;
         managed.session.updated_at = Utc::now();
         if let Ok(mut thermal) = managed.thermal_state.try_lock() {
             *thermal = ThermalState::Hot;
+        }
+        if let Ok(mut attention) = managed.attention_state.try_lock() {
+            *attention = AttentionState::Normal;
         }
 
         self.workspace
@@ -415,10 +451,6 @@ impl SessionManager {
                     let buf = buffer.lock().await;
                     buf.get_all()
                 };
-                if entries.is_empty() {
-                    let _ = event_tx.send(MuxEvent::ReplayEnd { session_id: sid });
-                    return;
-                }
                 let from_seq = entries.first().map(|e| e.seq).unwrap_or(0);
                 let to_seq = entries.last().map(|e| e.seq).unwrap_or(0);
                 let _ = event_tx.send(MuxEvent::ReplayStart {
@@ -426,6 +458,10 @@ impl SessionManager {
                     from_seq,
                     to_seq,
                 });
+                if entries.is_empty() {
+                    let _ = event_tx.send(MuxEvent::ReplayEnd { session_id: sid });
+                    return;
+                }
                 for entry in entries {
                     let _ = event_tx.send(MuxEvent::ReplayChunk {
                         session_id: sid,
@@ -467,15 +503,15 @@ impl SessionManager {
                 let mut buf = buffer.lock().await;
                 buf.push(data.clone())
             };
-            let _ = event_tx.send(MuxEvent::SessionOutput {
-                session_id,
-                data: data.clone(),
-                seq,
-            });
 
-            // Attention state detection for warm sessions
             let thermal = thermal_state.lock().await.clone();
-            if thermal == ThermalState::Warm {
+            if thermal == ThermalState::Hot {
+                let _ = event_tx.send(MuxEvent::SessionOutput {
+                    session_id,
+                    data: data.clone(),
+                    seq,
+                });
+            } else if thermal == ThermalState::Warm {
                 let text = String::from_utf8_lossy(&data).to_lowercase();
                 let new_state = detect_attention_state(&text);
                 if let Some(new_attention) = new_state {
@@ -512,12 +548,7 @@ impl SessionManager {
                 PtyExitStatus::Exited(code) => ProcessState::Exited { code: *code },
                 PtyExitStatus::Killed => ProcessState::Killed,
             };
-            // Emit attention change based on exit status
-            let attention = match &status {
-                PtyExitStatus::Exited(Some(0)) => AttentionState::Done,
-                PtyExitStatus::Exited(_) => AttentionState::Failed,
-                PtyExitStatus::Killed => AttentionState::Failed,
-            };
+            let attention = attention_for_process_state(&process_state);
             let _ = event_tx.send(MuxEvent::AttentionChanged {
                 session_id,
                 attention_state: attention,
@@ -535,6 +566,16 @@ fn hot_session_limit_message(limit: usize) -> String {
         "Hot Session limit reached. Current Hot Session limit is {}. Park or close a Hot Session, or change Max Hot Sessions in Settings > Layout.",
         limit
     )
+}
+
+fn attention_for_process_state(state: &ProcessState) -> AttentionState {
+    match state {
+        ProcessState::Exited { code: Some(0) } => AttentionState::Done,
+        ProcessState::Exited { .. } | ProcessState::Killed | ProcessState::FailedToStart { .. } => {
+            AttentionState::Failed
+        }
+        ProcessState::Starting | ProcessState::Running => AttentionState::Normal,
+    }
 }
 
 fn detect_attention_state(text: &str) -> Option<AttentionState> {

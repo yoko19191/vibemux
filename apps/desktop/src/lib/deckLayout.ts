@@ -8,13 +8,20 @@ export interface DeckPaneLayout {
   zIndex: number;
 }
 
-/** How many px of a non-focused pane peeks out from behind the focused one */
-const PEEK_WIDTH = 48;
+export interface DeckLayoutOptions {
+  focusedPaneWidth?: number;
+}
+
+const DEFAULT_FOCUSED_RATIO = 0.6;
+const MIN_FOCUSED_WIDTH = 260;
+const MIN_PEEK_WIDTH = 16;
+const MAX_PEEK_WIDTH = 160;
 
 export function calculateDeckLayout(
   containerWidth: number,
   sessionIds: string[],
   focusedSessionId: string | null,
+  options: DeckLayoutOptions = {},
 ): DeckPaneLayout[] {
   if (sessionIds.length === 0) return [];
 
@@ -30,15 +37,25 @@ export function calculateDeckLayout(
     ];
   }
 
-  const focusedId = focusedSessionId ?? sessionIds[0];
+  const focusedId = focusedSessionId && sessionIds.includes(focusedSessionId) ? focusedSessionId : sessionIds[0];
   const focusedIdx = sessionIds.indexOf(focusedId);
 
   const leftIds = sessionIds.slice(0, focusedIdx);
   const rightIds = sessionIds.slice(focusedIdx + 1);
 
-  const leftPeekTotal = leftIds.length * PEEK_WIDTH;
-  const rightPeekTotal = rightIds.length * PEEK_WIDTH;
-  const focusedWidth = containerWidth - leftPeekTotal - rightPeekTotal;
+  const sideCount = leftIds.length + rightIds.length;
+  const focusedRatio = clamp(options.focusedPaneWidth ?? DEFAULT_FOCUSED_RATIO, 0.3, 0.9);
+  const targetFocusedWidth = containerWidth * focusedRatio;
+  const maxPeekForMinFocus = sideCount > 0
+    ? Math.max(0, (containerWidth - Math.min(MIN_FOCUSED_WIDTH, containerWidth)) / sideCount)
+    : 0;
+  const rawPeekWidth = sideCount > 0 ? (containerWidth - targetFocusedWidth) / sideCount : 0;
+  const peekWidth = sideCount > 0
+    ? Math.min(clamp(rawPeekWidth, MIN_PEEK_WIDTH, MAX_PEEK_WIDTH), maxPeekForMinFocus)
+    : 0;
+  const leftPeekTotal = leftIds.length * peekWidth;
+  const rightPeekTotal = rightIds.length * peekWidth;
+  const focusedWidth = Math.max(0, containerWidth - leftPeekTotal - rightPeekTotal);
 
   const layouts: DeckPaneLayout[] = [];
 
@@ -47,7 +64,7 @@ export function calculateDeckLayout(
   // every pane's peek strip is visible (not covered by the one closer to focused).
   leftIds.forEach((id, i) => {
     const paneWidth = focusedWidth;
-    const paneLeft = (i + 1) * PEEK_WIDTH - paneWidth;
+    const paneLeft = (i + 1) * peekWidth - paneWidth;
     layouts.push({
       sessionId: id,
       width: paneWidth,
@@ -72,7 +89,7 @@ export function calculateDeckLayout(
   rightIds.forEach((id, i) => {
     const paneWidth = focusedWidth;
     const rightEdge = leftPeekTotal + focusedWidth;
-    const paneLeft = rightEdge + i * PEEK_WIDTH;
+    const paneLeft = rightEdge + i * peekWidth;
     layouts.push({
       sessionId: id,
       width: paneWidth,
@@ -83,4 +100,8 @@ export function calculateDeckLayout(
   });
 
   return layouts;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }

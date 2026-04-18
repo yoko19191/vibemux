@@ -11,7 +11,7 @@
   import HelpOverlay from "./lib/HelpOverlay.svelte";
   import Titlebar from "./lib/Titlebar.svelte";
   import Onboarding from "./lib/Onboarding.svelte";
-  import { onReplayStart, onReplayChunk, onReplayEnd, cancelReplay } from "./lib/terminalReplay";
+  import { onReplayStart, onReplayChunk, onReplayEnd, cancelReplay, isReplaying } from "./lib/terminalReplay";
   import type { MuxEvent, SessionSnapshot } from "./lib/types";
   import { parsePrefixKey, matchesPrefixKey, formatPrefixKey } from "./lib/keymap";
   import type { PrefixKeyMatcher } from "./lib/keymap";
@@ -28,10 +28,12 @@
   let searchQuery = $state("");
   let showHelp = $state(false);
   let homeCwd = $state("/");
-  let terminalApis: Map<string, { writeOutput: (data: string) => void; triggerResize: () => void; serialize: () => string; focus: () => void; blur: () => void }> = new Map();
+  type TerminalApi = { writeOutput: (data: string) => void; triggerResize: () => void; serialize: () => string; focus: () => void; blur: () => void };
+  type PendingReplay = { replayChunks: string[]; liveChunks: string[]; started: boolean; ended: boolean };
+  let terminalApis: Map<string, TerminalApi> = new Map();
   let restoringSessionIds: Set<string> = $state(new Set());
   // Buffer replay events that arrive before TerminalPane mounts
-  let pendingReplays: Map<string, { chunks: string[]; ended: boolean }> = new Map();
+  let pendingReplays: Map<string, PendingReplay> = new Map();
   let unlisten: (() => void) | null = null;
   let selectedShelfIdx: number | null = $state(null);
   let renamingSessionId: string | null = $state(null);
@@ -43,7 +45,11 @@
   let hotSessionLimitWarning: { limit: number } | null = $state(null);
 
   // Terminal config derived from user config — passed to all TerminalPane instances
-  let terminalConfig: { fontFamily?: string; fontSize?: number; lineHeight?: number; theme?: Record<string, string> } = $state({});
+  let terminalConfig: { fontFamily?: string; fontSize?: number; lineHeight?: number; scrollback?: number; theme?: Record<string, string> } = $state({});
+  let layoutConfig: { focusedPaneWidth: number; animationMs: number } = $state({
+    focusedPaneWidth: 0.6,
+    animationMs: 150,
+  });
 
   let hotSessions = $derived(sessions.filter((s) => s.thermalState === "Hot"));
   let warmSessions = $derived(sessions.filter((s) => s.thermalState === "Warm"));
@@ -53,13 +59,24 @@
     return Number.isFinite(value) && value > 0 ? Math.floor(value) : 6;
   }
 
+  function readLayoutConfig(cfg: any) {
+    const focused = Number(cfg?.layout?.focused_pane_width);
+    const animation = Number(cfg?.layout?.animation_ms);
+    return {
+      focusedPaneWidth: Number.isFinite(focused) ? Math.min(Math.max(focused, 0.3), 0.9) : 0.6,
+      animationMs: Number.isFinite(animation) ? Math.min(Math.max(Math.floor(animation), 0), 500) : 150,
+    };
+  }
+
   function buildTerminalConfig(cfg: any) {
     if (!cfg) return undefined;
     const t = cfg.theme ?? {};
+    const scrollback = Number(cfg.terminal?.scrollback_lines);
     return {
       fontFamily: cfg.terminal?.font_family,
       fontSize: cfg.terminal?.font_size,
       lineHeight: cfg.terminal?.line_height,
+      scrollback: Number.isFinite(scrollback) && scrollback > 0 ? Math.floor(scrollback) : undefined,
       theme: {
         background: t.background,
         foreground: t.foreground,
@@ -83,6 +100,15 @@
         brightWhite: t.bright_white,
       },
     };
+  }
+
+  function ensurePendingReplay(sessionId: string): PendingReplay {
+    let pending = pendingReplays.get(sessionId);
+    if (!pending) {
+      pending = { replayChunks: [], liveChunks: [], started: false, ended: false };
+      pendingReplays.set(sessionId, pending);
+    }
+    return pending;
   }
 
   // Dynamic window title
@@ -120,9 +146,22 @@
     unlisten = await listen<MuxEvent>("mux-event", (event) => {
       const muxEvent = event.payload;
       if (muxEvent.type === "sessionOutput") {
-        terminalApis.get(muxEvent.sessionId)?.writeOutput(muxEvent.data);
+        const pending = pendingReplays.get(muxEvent.sessionId);
+        if (pending) {
+          pending.liveChunks.push(muxEvent.data);
+          return;
+        }
+        if (isReplaying(muxEvent.sessionId)) {
+          onReplayChunk(muxEvent.sessionId, muxEvent.data);
+          return;
+        }
+        const session = sessions.find((s) => s.id === muxEvent.sessionId);
+        if (session?.thermalState === "Hot") {
+          terminalApis.get(muxEvent.sessionId)?.writeOutput(muxEvent.data);
+        }
       } else if (muxEvent.type === "sessionExited") {
         cancelReplay(muxEvent.sessionId);
+        pendingReplays.delete(muxEvent.sessionId);
         sessions = sessions.filter((s) => s.id !== muxEvent.sessionId);
         terminalApis.delete(muxEvent.sessionId);
         restoringSessionIds = new Set([...restoringSessionIds].filter((id) => id !== muxEvent.sessionId));
@@ -133,12 +172,13 @@
         sessions = sessions.map((s) =>
           s.id === muxEvent.sessionId ? { ...s, thermalState: "Warm" as const } : s
         );
+        terminalApis.delete(muxEvent.sessionId);
+        cancelReplay(muxEvent.sessionId);
         if (focusedSessionId === muxEvent.sessionId) {
           const hotSessions = sessions.filter((s) => s.thermalState === "Hot");
           focusedSessionId = hotSessions[0]?.id ?? null;
         }
       } else if (muxEvent.type === "replayStart") {
-        console.log("[vibemux] replayStart:", muxEvent.sessionId);
         sessions = sessions.map((s) =>
           s.id === muxEvent.sessionId ? { ...s, thermalState: "Hot" as const } : s
         );
@@ -146,19 +186,19 @@
 
         // Always buffer replay events — the thermalState change will trigger
         // DeckPane remount, so the current terminalApis entry (if any) is stale
-        console.log("[vibemux] replayStart: buffering (waiting for new TerminalPane mount)");
-        pendingReplays.set(muxEvent.sessionId, { chunks: [], ended: false });
+        terminalApis.delete(muxEvent.sessionId);
+        const pending = ensurePendingReplay(muxEvent.sessionId);
+        pending.started = true;
+        pending.ended = false;
       } else if (muxEvent.type === "replayChunk") {
         const pending = pendingReplays.get(muxEvent.sessionId);
-        console.log("[vibemux] replayChunk:", muxEvent.sessionId, "pending?", !!pending, "data length:", muxEvent.data.length);
         if (pending) {
-          pending.chunks.push(muxEvent.data);
+          pending.replayChunks.push(muxEvent.data);
         } else {
           onReplayChunk(muxEvent.sessionId, muxEvent.data);
         }
       } else if (muxEvent.type === "replayEnd") {
         const pending = pendingReplays.get(muxEvent.sessionId);
-        console.log("[vibemux] replayEnd:", muxEvent.sessionId, "pending?", !!pending);
         if (pending) {
           pending.ended = true;
         } else {
@@ -202,6 +242,7 @@
           prefixKeyConfig = cfg.keys.prefix;
         }
         maxHotSessions = readMaxHotSessions(cfg);
+        layoutConfig = readLayoutConfig(cfg);
         terminalConfig = buildTerminalConfig(cfg) ?? {};
         if (!cfg?.onboarding_completed) {
           showOnboarding = true;
@@ -256,16 +297,13 @@
     await createInitialSession();
   }
 
-  function handleTerminalReady(sessionId: string, api: { writeOutput: (data: string) => void; triggerResize: () => void; serialize: () => string; focus: () => void; blur: () => void }) {
-    console.log("[vibemux] handleTerminalReady:", sessionId);
+  function handleTerminalReady(sessionId: string, api: TerminalApi) {
     terminalApis.set(sessionId, api);
 
     // Drain any replay events that arrived before this terminal mounted
     const pending = pendingReplays.get(sessionId);
-    console.log("[vibemux] handleTerminalReady: pending?", !!pending, "chunks:", pending?.chunks.length, "ended:", pending?.ended);
     if (pending) {
       pendingReplays.delete(sessionId);
-      console.log("[vibemux] handleTerminalReady: draining buffered replay");
       onReplayStart(
         sessionId,
         api.writeOutput,
@@ -277,7 +315,10 @@
           );
         }
       );
-      for (const chunk of pending.chunks) {
+      for (const chunk of pending.replayChunks) {
+        onReplayChunk(sessionId, chunk);
+      }
+      for (const chunk of pending.liveChunks) {
         onReplayChunk(sessionId, chunk);
       }
       if (pending.ended) {
@@ -467,25 +508,33 @@
 
   async function parkCurrentSession() {
     if (!focusedSessionId) return;
+    await parkSessionById(focusedSessionId);
+  }
+
+  async function parkSessionById(sessionId: string) {
     try {
       // Capture screen snapshot before parking so recall can restore exact state
-      const api = terminalApis.get(focusedSessionId);
+      const api = terminalApis.get(sessionId);
       if (api) {
         const snapshot = api.serialize();
         if (snapshot) {
-          await invoke("session_save_snapshot", { sessionId: focusedSessionId, snapshot });
+          await invoke("session_save_snapshot", { sessionId, snapshot });
         }
       }
-      await invoke("session_park", { sessionId: focusedSessionId });
+      await invoke("session_park", { sessionId });
+      terminalApis.delete(sessionId);
+      cancelReplay(sessionId);
     } catch (e) {
       console.error("Failed to park session:", e);
     }
   }
 
   async function recallSession(sessionId: string) {
+    ensurePendingReplay(sessionId);
     try {
       await invoke("session_recall", { sessionId });
     } catch (e) {
+      pendingReplays.delete(sessionId);
       console.error("Failed to recall session:", e);
       if (String(e).includes("Hot Session limit reached")) {
         hotSessionLimitWarning = { limit: maxHotSessions };
@@ -591,23 +640,16 @@
         {focusedSessionId}
         {renamingSessionId}
         {terminalConfig}
+        {layoutConfig}
         {prefixKeyMatcher}
         onTerminalReady={handleTerminalReady}
         onFocusSession={handleFocusSession}
         onRenameConfirm={handleRenameConfirm}
         onRenameCancel={handleRenameCancel}
         onStartRename={(id) => { renamingSessionId = id; }}
-        onPark={async (sessionId) => {
-          const api = terminalApis.get(sessionId);
-          if (api) {
-            const snapshot = api.serialize();
-            if (snapshot) {
-              await invoke("session_save_snapshot", { sessionId, snapshot }).catch(console.error);
-            }
-          }
-          invoke("session_park", { sessionId }).catch(console.error);
-        }}
+        onPark={parkSessionById}
         onClose={closeSessionById}
+        onKill={killSessionById}
       />
     {:else if sessions.length > 0}
       <div class="loading">All sessions parked</div>
@@ -648,6 +690,7 @@
       onConfigChange={(cfg) => {
         if (cfg?.keys?.prefix) prefixKeyConfig = cfg.keys.prefix;
         maxHotSessions = readMaxHotSessions(cfg);
+        layoutConfig = readLayoutConfig(cfg);
         terminalConfig = buildTerminalConfig(cfg) ?? {};
       }}
     />
