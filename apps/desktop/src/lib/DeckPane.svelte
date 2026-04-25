@@ -5,6 +5,7 @@
   import type { ContextMenuItem } from "./ContextMenu.svelte";
   import type { ColorToken, ProcessState } from "./types";
   import type { PrefixKeyMatcher } from "./keymap";
+  import { colorMap, colorTokens } from "./colors";
   import { invoke } from "@tauri-apps/api/core";
 
   interface TerminalConfig {
@@ -35,6 +36,7 @@
     ondragstart?: (e: DragEvent) => void;
     ondragover?: (e: DragEvent) => void;
     ondrop?: (e: DragEvent) => void;
+    ondragend?: () => void;
     onRenameConfirm?: (name: string) => void;
     onRenameCancel?: () => void;
     onStartRename?: () => void;
@@ -47,7 +49,7 @@
     sessionId, sessionName, sessionCwd = "", terminalTitle = "", color, processState, isFocused, width,
     left = 0, zIndex = 1,
     isRenaming = false, terminalConfig, animationMs = 150, prefixKeyMatcher,
-    onReady, onclick, ondragstart, ondragover, ondrop,
+    onReady, onclick, ondragstart, ondragover, ondrop, ondragend,
     onRenameConfirm, onRenameCancel, onStartRename, onPark, onClose, onKill,
   }: Props = $props();
 
@@ -55,28 +57,6 @@
   let dynamicSuffix = $derived(sessionName && terminalTitle && terminalTitle !== sessionName ? `(${terminalTitle})` : "");
   let shortCwd = $derived(sessionCwd.replace(/^.*\/([^/]+)$/, "$1") || sessionCwd);
   let rendererType: 'webgl' | 'canvas' = $state('webgl');
-
-  const colorMap: Record<ColorToken, string> = {
-    Red: "#ef4444",
-    Orange: "#f97316",
-    Yellow: "#eab308",
-    Green: "#22c55e",
-    Cyan: "#06b6d4",
-    Blue: "#3b82f6",
-    Purple: "#a855f7",
-    Pink: "#ec4899",
-  };
-
-  const colorTokens: { token: ColorToken; color: string }[] = [
-    { token: "Red", color: "#ef4444" },
-    { token: "Orange", color: "#f97316" },
-    { token: "Yellow", color: "#eab308" },
-    { token: "Green", color: "#22c55e" },
-    { token: "Cyan", color: "#06b6d4" },
-    { token: "Blue", color: "#3b82f6" },
-    { token: "Purple", color: "#a855f7" },
-    { token: "Pink", color: "#ec4899" },
-  ];
 
   let isBusy = $derived(processState?.type === "Running");
   let borderColor = $derived(colorMap[color] ?? "#666");
@@ -181,6 +161,7 @@
     class="drag-handle"
     draggable="true"
     ondragstart={ondragstart}
+    ondragend={ondragend}
     oncontextmenu={handleHeaderContextMenu}
     style="background: linear-gradient(to right, {borderColor}22, transparent);"
   ></div>
@@ -202,7 +183,7 @@
       {#if isBusy}
         <BusyIndicator color={borderColor} />
       {/if}
-      <span class="session-name">{displayName}</span>{#if dynamicSuffix}<span class="session-dynamic">{dynamicSuffix}</span>{/if}
+      <span class="session-name" ondblclick={(e) => { e.stopPropagation(); startRename(); }}>{displayName}</span>{#if dynamicSuffix}<span class="session-dynamic">{dynamicSuffix}</span>{/if}
       {#if shortCwd}
         <span class="session-cwd">{shortCwd}</span>
       {/if}
@@ -219,7 +200,7 @@
     {/if}
   </div>
   <div class="terminal-container">
-    <TerminalPane {sessionId} {terminalConfig} {prefixKeyMatcher} {onReady} onRendererType={(t) => (rendererType = t)} />
+    <TerminalPane {sessionId} accentColor={borderColor} {terminalConfig} {prefixKeyMatcher} {onReady} onRendererType={(t) => (rendererType = t)} />
   </div>
 </div>
 
@@ -283,6 +264,7 @@
     font-family: system-ui, -apple-system, sans-serif;
     flex: 1;
     min-width: 0;
+    cursor: text;
   }
 
   .session-cwd {

@@ -1,6 +1,6 @@
 <h1 align="center">
-  <img src="assets/icon.png" alt="Vibemux icon" width="48" height="48" style="vertical-align: middle;">
-  <span style="vertical-align: middle;">Vibemux</span>
+  <img src="assets/icon.png" alt="Vibemux icon" width="48" height="48"><br>
+  Vibemux
 </h1>
 
 <p align="center">

@@ -47,7 +47,9 @@
   let containerEl: HTMLDivElement;
   let containerWidth = $state(0);
   let resizeObserver: ResizeObserver | null = null;
-  let draggedSessionId: string | null = null;
+  let draggedSessionId: string | null = $state(null);
+  let dragInsertIdx: number | null = $state(null);
+  let dragInsertSide: 'left' | 'right' | null = $state(null);
 
   let layouts = $derived(
     calculateDeckLayout(
@@ -87,14 +89,30 @@
     }
   }
 
-  function handleDragOver(e: DragEvent) {
+  function handleDragOverPane(targetSessionId: string, e: DragEvent) {
     e.preventDefault();
+    if (!draggedSessionId || draggedSessionId === targetSessionId) {
+      dragInsertIdx = null;
+      dragInsertSide = null;
+      return;
+    }
+    const targetIdx = sessions.findIndex((s) => s.id === targetSessionId);
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const midX = rect.left + rect.width / 2;
+    dragInsertIdx = targetIdx;
+    dragInsertSide = e.clientX < midX ? 'left' : 'right';
+  }
+
+  function handleDragEnd() {
+    draggedSessionId = null;
+    dragInsertIdx = null;
+    dragInsertSide = null;
   }
 
   async function handleDrop(targetSessionId: string, e: DragEvent) {
     e.preventDefault();
     if (!draggedSessionId || draggedSessionId === targetSessionId) {
-      draggedSessionId = null;
+      handleDragEnd();
       return;
     }
 
@@ -103,14 +121,15 @@
     const toIdx = ids.indexOf(targetSessionId);
 
     if (fromIdx === -1 || toIdx === -1) {
-      draggedSessionId = null;
+      handleDragEnd();
       return;
     }
 
-    // Reorder
+    const insertAt = dragInsertSide === 'right' ? toIdx + 1 : toIdx;
     const reordered = [...ids];
     reordered.splice(fromIdx, 1);
-    reordered.splice(toIdx, 0, draggedSessionId);
+    const adjustedInsert = insertAt > fromIdx ? insertAt - 1 : insertAt;
+    reordered.splice(adjustedInsert, 0, draggedSessionId);
 
     try {
       await invoke("session_reorder", { sessionIds: reordered });
@@ -118,7 +137,7 @@
       console.error("Failed to reorder sessions:", err);
     }
 
-    draggedSessionId = null;
+    handleDragEnd();
   }
 
   onMount(() => {
@@ -158,8 +177,9 @@
       onReady={(api) => onTerminalReady?.(layout.sessionId, api)}
       onclick={() => onFocusSession?.(layout.sessionId)}
       ondragstart={(e) => handleDragStart(layout.sessionId, e)}
-      ondragover={handleDragOver}
+      ondragover={(e) => handleDragOverPane(layout.sessionId, e)}
       ondrop={(e) => handleDrop(layout.sessionId, e)}
+      ondragend={handleDragEnd}
       onRenameConfirm={(name) => onRenameConfirm?.(layout.sessionId, name)}
       onRenameCancel={onRenameCancel}
       onStartRename={() => onStartRename?.(layout.sessionId)}
@@ -168,6 +188,15 @@
       onKill={() => onKill?.(layout.sessionId)}
     />
   {/each}
+  {#if dragInsertIdx !== null && dragInsertSide !== null}
+    {@const targetLayout = layouts.find((l) => l.sessionId === sessions[dragInsertIdx]?.id)}
+    {#if targetLayout}
+      <div
+        class="drag-insert-line"
+        style="left: {dragInsertSide === 'left' ? targetLayout.left : targetLayout.left + targetLayout.width}px;"
+      ></div>
+    {/if}
+  {/if}
 </div>
 
 <style>
@@ -176,5 +205,17 @@
     width: 100%;
     height: 100%;
     overflow: hidden;
+  }
+
+  .drag-insert-line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #3b82f6;
+    box-shadow: 0 0 6px 1px rgba(59, 130, 246, 0.5);
+    z-index: 100;
+    pointer-events: none;
+    transition: left 100ms ease-out;
   }
 </style>

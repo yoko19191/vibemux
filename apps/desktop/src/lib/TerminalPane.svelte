@@ -22,6 +22,7 @@
 
   interface Props {
     sessionId: string;
+    accentColor?: string;
     terminalConfig?: TerminalConfig;
     prefixKeyMatcher?: PrefixKeyMatcher;
     onReady?: (api: {
@@ -34,7 +35,7 @@
     onRendererType?: (type: 'webgl' | 'canvas') => void;
   }
 
-  let { sessionId, terminalConfig, prefixKeyMatcher, onReady, onRendererType }: Props = $props();
+  let { sessionId, accentColor, terminalConfig, prefixKeyMatcher, onReady, onRendererType }: Props = $props();
 
   let containerEl: HTMLDivElement;
   let terminal: Terminal | null = null;
@@ -133,13 +134,18 @@
   }
 
   onMount(() => {
+    const baseTheme = terminalConfig?.theme ?? {
+      background: "#111111",
+      foreground: "#d9d4c7",
+      cursor: "#ff6b57",
+    };
+    const theme = accentColor
+      ? { ...baseTheme, cursor: accentColor, selectionBackground: accentColor + "40" }
+      : baseTheme;
+
     terminal = new Terminal({
       scrollback: terminalConfig?.scrollback ?? 10_000,
-      theme: terminalConfig?.theme ?? {
-        background: "#111111",
-        foreground: "#d9d4c7",
-        cursor: "#ff6b57",
-      },
+      theme,
       fontFamily: terminalConfig?.fontFamily ?? "Menlo, Monaco, 'Courier New', monospace",
       fontSize: terminalConfig?.fontSize ?? 14,
       lineHeight: terminalConfig?.lineHeight ?? 1.2,
@@ -271,13 +277,18 @@
 
   // Apply config changes to running terminal
   $effect(() => {
-    if (!terminal || !terminalConfig) return;
-    if (terminalConfig.fontFamily) terminal.options.fontFamily = terminalConfig.fontFamily;
-    if (terminalConfig.fontSize) terminal.options.fontSize = terminalConfig.fontSize;
-    if (terminalConfig.lineHeight) terminal.options.lineHeight = terminalConfig.lineHeight;
-    if (terminalConfig.scrollback) terminal.options.scrollback = terminalConfig.scrollback;
-    if (terminalConfig.theme) terminal.options.theme = terminalConfig.theme;
-    // Re-fit after font/size changes
+    if (!terminal) return;
+    if (terminalConfig?.fontFamily) terminal.options.fontFamily = terminalConfig.fontFamily;
+    if (terminalConfig?.fontSize) terminal.options.fontSize = terminalConfig.fontSize;
+    if (terminalConfig?.lineHeight) terminal.options.lineHeight = terminalConfig.lineHeight;
+    if (terminalConfig?.scrollback) terminal.options.scrollback = terminalConfig.scrollback;
+    const currentTheme = terminal.options.theme ?? {};
+    const themeUpdate = terminalConfig?.theme ? { ...currentTheme, ...terminalConfig.theme } : { ...currentTheme };
+    if (accentColor) {
+      themeUpdate.cursor = accentColor;
+      themeUpdate.selectionBackground = accentColor + "40";
+    }
+    terminal.options.theme = themeUpdate;
     fitAddon?.fit();
   });
 

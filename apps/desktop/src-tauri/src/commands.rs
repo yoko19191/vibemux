@@ -295,6 +295,19 @@ pub async fn session_reorder(
 }
 
 #[tauri::command]
+pub async fn session_reorder_warm(
+    state: State<'_, AppState>,
+    session_ids: Vec<String>,
+) -> Result<(), String> {
+    let uuids: Vec<Uuid> = session_ids
+        .iter()
+        .map(|id| Uuid::parse_str(id).map_err(|_| format!("invalid session id: '{}'", id)))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut manager = state.lock().await;
+    manager.reorder_warm_sessions(uuids)
+}
+
+#[tauri::command]
 pub fn config_get(config_state: State<'_, ConfigState>) -> Result<UserConfig, String> {
     let cfg = config_state.lock().map_err(|e| e.to_string())?;
     Ok(cfg.clone())

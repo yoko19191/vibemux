@@ -490,6 +490,19 @@ impl SessionManager {
         Ok(())
     }
 
+    pub fn reorder_warm_sessions(&mut self, session_ids: Vec<Uuid>) -> Result<(), String> {
+        for id in &session_ids {
+            if !self.workspace.warm_session_ids.contains(id) {
+                return Err(format!("session {} is not a warm session", id));
+            }
+        }
+        if session_ids.len() != self.workspace.warm_session_ids.len() {
+            return Err("reorder must include all warm session IDs".to_string());
+        }
+        self.workspace.warm_session_ids = session_ids;
+        Ok(())
+    }
+
     async fn route_output(
         session_id: Uuid,
         mut output_rx: mpsc::UnboundedReceiver<Vec<u8>>,

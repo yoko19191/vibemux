@@ -60,16 +60,7 @@
   query = promptFromTrigger(getInitialQuery());
   mode = isChatTrigger(getInitialQuery()) ? "chat" : "search";
 
-  const colorMap: Record<string, string> = {
-    Red: "#ef4444",
-    Orange: "#f97316",
-    Yellow: "#eab308",
-    Green: "#22c55e",
-    Cyan: "#06b6d4",
-    Blue: "#3b82f6",
-    Purple: "#a855f7",
-    Pink: "#ec4899",
-  };
+  import { colorMap } from "./colors";
 
   const thermalLabel: Record<string, string> = {
     Hot: "hot",

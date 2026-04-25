@@ -14,6 +14,7 @@
   import type { MuxEvent, SessionSnapshot } from "./lib/types";
   import { parsePrefixKey, matchesPrefixKey, formatPrefixKey } from "./lib/keymap";
   import type { PrefixKeyMatcher } from "./lib/keymap";
+  import { colorMap } from "./lib/colors";
 
   let sessions: SessionSnapshot[] = $state([]);
   let focusedSessionId: string | null = $state(null);
@@ -56,6 +57,17 @@
 
   let hotSessions = $derived(sessions.filter((s) => s.thermalState === "Hot"));
   let warmSessions = $derived(sessions.filter((s) => s.thermalState === "Warm"));
+  let focusedAccentHex = $derived.by(() => {
+    const focused = sessions.find((s) => s.id === focusedSessionId && s.thermalState === "Hot");
+    return focused ? (colorMap[focused.color] ?? null) : null;
+  });
+
+  function hexToRgba(hex: string, alpha: number): string {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
 
   function readMaxHotSessions(cfg: any): number {
     const value = Number(cfg?.layout?.max_hot_sessions);
@@ -657,6 +669,12 @@
   />
 
   <div class="content-area" class:has-detached={warmSessions.length > 0}>
+    {#if focusedAccentHex}
+      <div
+        class="ambient-glow"
+        style="background: radial-gradient(circle at center, {hexToRgba(focusedAccentHex, 0.04)}, transparent 40%);"
+      ></div>
+    {/if}
     {#if configError}
       <div class="config-error-banner">
         <span class="config-error-icon">⚠</span>
@@ -814,6 +832,14 @@
     right: 0;
     bottom: 0;
     overflow: hidden;
+  }
+
+  .ambient-glow {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    transition: background 300ms ease;
   }
 
   .content-area.has-detached {

@@ -45,6 +45,7 @@ pub fn run() {
             commands::session_rename,
             commands::session_set_color,
             commands::session_reorder,
+            commands::session_reorder_warm,
             commands::workspace_get_snapshot,
             commands::config_get,
             commands::config_update,

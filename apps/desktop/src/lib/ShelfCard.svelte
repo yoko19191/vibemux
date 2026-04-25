@@ -3,6 +3,7 @@
   import BusyIndicator from "./BusyIndicator.svelte";
   import type { ContextMenuItem } from "./ContextMenu.svelte";
   import type { SessionSnapshot, ColorToken, AttentionState } from "./types";
+  import { colorMap, colorTokens } from "./colors";
 
   interface Props {
     session: SessionSnapshot;
@@ -13,28 +14,6 @@
   }
 
   let { session, onRename, onSetColor, onClose, onKill }: Props = $props();
-
-  const colorMap: Record<ColorToken, string> = {
-    Red: "#ef4444",
-    Orange: "#f97316",
-    Yellow: "#eab308",
-    Green: "#22c55e",
-    Cyan: "#06b6d4",
-    Blue: "#3b82f6",
-    Purple: "#a855f7",
-    Pink: "#ec4899",
-  };
-
-  const colorTokens: { token: ColorToken; color: string }[] = [
-    { token: "Red", color: "#ef4444" },
-    { token: "Orange", color: "#f97316" },
-    { token: "Yellow", color: "#eab308" },
-    { token: "Green", color: "#22c55e" },
-    { token: "Cyan", color: "#06b6d4" },
-    { token: "Blue", color: "#3b82f6" },
-    { token: "Purple", color: "#a855f7" },
-    { token: "Pink", color: "#ec4899" },
-  ];
 
   function formatTime(iso: string): string {
     const d = new Date(iso);
