@@ -185,12 +185,6 @@
         handleCopy();
         return false;
       }
-      if (mod && key === "v") {
-        e.preventDefault();
-        e.stopPropagation();
-        void pasteFromClipboard();
-        return false;
-      }
       return true;
     });
 
