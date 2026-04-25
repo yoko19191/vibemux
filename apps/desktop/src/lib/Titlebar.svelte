@@ -1,19 +1,32 @@
 <script lang="ts">
   interface Props {
     prefixKey: string;
+    focusedTitle: string;
+    focusedAccentColor: string;
+    isMacOS: boolean;
     onNewSession: () => void;
     onSearch: () => void;
     onSettings: () => void;
   }
 
-  let { prefixKey, onNewSession, onSearch, onSettings }: Props = $props();
+  let { prefixKey, focusedTitle, focusedAccentColor, isMacOS, onNewSession, onSearch, onSettings }: Props = $props();
 </script>
 
 <div class="titlebar">
+  <!-- Full-coverage drag layer sits behind everything -->
+  <div class="drag-layer" data-tauri-drag-region></div>
+
   <div class="titlebar-left">
-    <span class="workspace-dot"></span>
-    <span class="workspace-label">1 Default</span>
+    {#if isMacOS}
+      <div class="traffic-light-spacer"></div>
+    {/if}
+    <span class="prefix-hint">{prefixKey}</span>
   </div>
+
+  <div class="titlebar-center">
+    <span class="session-title" style="color: {focusedAccentColor};">{focusedTitle}</span>
+  </div>
+
   <div class="titlebar-right">
     <button
       class="tb-btn"
@@ -42,58 +55,86 @@
     top: 0;
     left: 0;
     right: 0;
-    height: 36px;
+    height: 28px;
     background: #161616;
-    border-bottom: 1px solid transparent;
-    border-image: linear-gradient(to right, #3b82f640, #3b82f620, transparent) 1;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 0.75rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
     z-index: 100;
     font-family: system-ui, -apple-system, sans-serif;
     user-select: none;
   }
 
-  .titlebar-left {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+  .drag-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
   }
 
-  .workspace-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: #3b82f6;
+  .titlebar-left {
+    position: absolute;
+    left: 0.5rem;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  .traffic-light-spacer {
+    width: 68px;
     flex-shrink: 0;
   }
 
-  .workspace-label {
-    color: #888;
-    font-size: 0.75rem;
+  .prefix-hint {
+    color: #555;
+    font-size: 0.65rem;
+    letter-spacing: 0.02em;
+  }
+
+  .titlebar-center {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  .session-title {
+    font-size: 0.7rem;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 50%;
   }
 
   .titlebar-right {
+    position: absolute;
+    right: 0.5rem;
+    top: 0;
+    bottom: 0;
     display: flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: 0.15rem;
+    z-index: 1;
   }
 
   .tb-btn {
     background: none;
     border: none;
-    color: #888;
+    color: #666;
+    font-size: 0.8rem;
     cursor: pointer;
-    font-size: 1rem;
-    width: 28px;
-    height: 28px;
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    transition: background 0.1s, color 0.1s;
+    padding: 2px 6px;
+    border-radius: 3px;
+    line-height: 1;
+    transition: background 100ms ease, color 100ms ease;
   }
 
   .tb-btn:hover {

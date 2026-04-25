@@ -62,6 +62,18 @@
     return focused ? (colorMap[focused.color] ?? null) : null;
   });
 
+  const isMacOS = typeof navigator !== "undefined" && /mac/i.test(navigator.platform);
+
+  let focusedTitle = $derived.by(() => {
+    const s = sessions.find((s) => s.id === focusedSessionId && s.thermalState === "Hot");
+    if (!s) return "Vibemux";
+    const isRunning = s.processState.type === "Running";
+    const title = s.terminalTitle || s.cwd.replace(/^.*\/([^/]+)$/, "$1") || s.cwd;
+    return isRunning ? `* ${title}` : title;
+  });
+
+  let focusedAccentColor = $derived(focusedAccentHex ?? "#888");
+
   function hexToRgba(hex: string, alpha: number): string {
     const r = parseInt(hex.slice(1, 3), 16);
     const g = parseInt(hex.slice(3, 5), 16);
@@ -660,6 +672,9 @@
 <main class:has-detached={warmSessions.length > 0}>
   <Titlebar
     prefixKey={prefixKeyDisplay}
+    {focusedTitle}
+    {focusedAccentColor}
+    {isMacOS}
     onNewSession={requestNewSession}
     onSearch={openSearch}
     onSettings={() => {
@@ -827,7 +842,7 @@
 
   .content-area {
     position: absolute;
-    top: 36px;
+    top: 28px;
     left: 0;
     right: 0;
     bottom: 0;
