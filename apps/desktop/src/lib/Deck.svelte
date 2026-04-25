@@ -189,7 +189,8 @@
     />
   {/each}
   {#if dragInsertIdx !== null && dragInsertSide !== null}
-    {@const targetLayout = layouts.find((l) => l.sessionId === sessions[dragInsertIdx]?.id)}
+    {@const idx = dragInsertIdx}
+    {@const targetLayout = layouts.find((l) => l.sessionId === sessions[idx]?.id)}
     {#if targetLayout}
       <div
         class="drag-insert-line"
