@@ -166,30 +166,41 @@ impl PtyHost {
     }
 
     pub fn kill(&self) -> Result<(), PtyError> {
-        let result = self.send_signal(libc::SIGKILL);
+        let result = self.force_kill();
         self.exited.store(true, Ordering::SeqCst);
         result
     }
 
     pub async fn graceful_close(&self, timeout_ms: u64) -> Result<(), PtyError> {
-        let half_timeout = timeout_ms / 2;
-        let _ = self.send_signal(libc::SIGHUP);
-        tokio::time::sleep(std::time::Duration::from_millis(half_timeout)).await;
+        #[cfg(unix)]
+        {
+            let half_timeout = timeout_ms / 2;
+            let _ = self.send_signal(libc::SIGHUP);
+            tokio::time::sleep(std::time::Duration::from_millis(half_timeout)).await;
 
-        if !self.exited.load(Ordering::SeqCst) {
-            let _ = self.send_signal(libc::SIGTERM);
-            tokio::time::sleep(std::time::Duration::from_millis(
-                timeout_ms.saturating_sub(half_timeout),
-            ))
-            .await;
+            if !self.exited.load(Ordering::SeqCst) {
+                let _ = self.send_signal(libc::SIGTERM);
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    timeout_ms.saturating_sub(half_timeout),
+                ))
+                .await;
+            }
+
+            if !self.exited.load(Ordering::SeqCst) {
+                let _ = self.kill();
+            }
         }
 
-        if !self.exited.load(Ordering::SeqCst) {
+        #[cfg(windows)]
+        {
+            let _ = timeout_ms;
             let _ = self.kill();
         }
+
         Ok(())
     }
 
+    #[cfg(unix)]
     fn send_signal(&self, signal: i32) -> Result<(), PtyError> {
         if self.exited.load(Ordering::SeqCst) {
             return Ok(());
@@ -197,6 +208,33 @@ impl PtyHost {
         if let Some(pid) = self.child_pid {
             unsafe {
                 libc::kill(pid as i32, signal);
+            }
+        }
+        Ok(())
+    }
+
+    fn force_kill(&self) -> Result<(), PtyError> {
+        if self.exited.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        #[cfg(unix)]
+        if let Some(pid) = self.child_pid {
+            unsafe {
+                libc::kill(pid as i32, libc::SIGKILL);
+            }
+        }
+        #[cfg(windows)]
+        if let Some(pid) = self.child_pid {
+            unsafe {
+                let handle = winapi::um::processthreadsapi::OpenProcess(
+                    winapi::um::winnt::PROCESS_TERMINATE,
+                    0,
+                    pid,
+                );
+                if !handle.is_null() {
+                    winapi::um::processthreadsapi::TerminateProcess(handle, 1);
+                    winapi::um::handleapi::CloseHandle(handle);
+                }
             }
         }
         Ok(())
