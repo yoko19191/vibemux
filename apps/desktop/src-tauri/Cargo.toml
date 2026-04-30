@@ -1,6 +1,6 @@
 [package]
 name = "vibemux-desktop"
-version = "1.2.1"
+version = "1.2.2"
 edition = "2021"
 authors = ["CGH <yoko19191@github.com>"]
 description = "A keyboard-first terminal multiplexer for vibe coding"
