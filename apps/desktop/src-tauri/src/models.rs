@@ -15,6 +15,24 @@ pub enum ThermalState {
     Cold,
 }
 
+impl ThermalState {
+    pub fn to_u8(&self) -> u8 {
+        match self {
+            ThermalState::Hot => 0,
+            ThermalState::Warm => 1,
+            ThermalState::Cold => 2,
+        }
+    }
+
+    pub fn from_u8(v: u8) -> Self {
+        match v {
+            0 => ThermalState::Hot,
+            1 => ThermalState::Warm,
+            _ => ThermalState::Cold,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum ProcessState {
     Starting,
@@ -31,6 +49,28 @@ pub enum AttentionState {
     NeedsInput,
     Failed,
     Done,
+}
+
+impl AttentionState {
+    pub fn to_u8(&self) -> u8 {
+        match self {
+            AttentionState::Normal => 0,
+            AttentionState::Active => 1,
+            AttentionState::NeedsInput => 2,
+            AttentionState::Failed => 3,
+            AttentionState::Done => 4,
+        }
+    }
+
+    pub fn from_u8(v: u8) -> Self {
+        match v {
+            0 => AttentionState::Normal,
+            1 => AttentionState::Active,
+            2 => AttentionState::NeedsInput,
+            3 => AttentionState::Failed,
+            _ => AttentionState::Done,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]

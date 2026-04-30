@@ -1,9 +1,10 @@
+use bytes::Bytes;
 use std::collections::VecDeque;
 
 #[derive(Clone, Debug)]
 pub struct RingBufferEntry {
     pub seq: u64,
-    pub data: Vec<u8>,
+    pub data: Bytes,
 }
 
 pub struct OutputRingBuffer {
@@ -35,7 +36,7 @@ impl OutputRingBuffer {
         }
     }
 
-    pub fn push(&mut self, data: Vec<u8>) -> u64 {
+    pub fn push(&mut self, data: Bytes) -> u64 {
         let seq = self.next_seq;
         self.next_seq += 1;
         self.current_bytes += data.len();
@@ -66,11 +67,7 @@ impl OutputRingBuffer {
     }
 
     pub fn current_seq(&self) -> u64 {
-        if self.next_seq > 1 {
-            self.next_seq - 1
-        } else {
-            0
-        }
+        self.next_seq.saturating_sub(1)
     }
 }
 
@@ -87,15 +84,15 @@ mod tests {
     #[test]
     fn test_push_and_get_all() {
         let mut buf = OutputRingBuffer::new();
-        buf.push(b"hello".to_vec());
-        buf.push(b"world".to_vec());
+        buf.push(Bytes::from_static(b"hello"));
+        buf.push(Bytes::from_static(b"world"));
 
         let all = buf.get_all();
         assert_eq!(all.len(), 2);
         assert_eq!(all[0].seq, 1);
-        assert_eq!(all[0].data, b"hello");
+        assert_eq!(&all[0].data[..], b"hello");
         assert_eq!(all[1].seq, 2);
-        assert_eq!(all[1].data, b"world");
+        assert_eq!(&all[1].data[..], b"world");
     }
 
     #[test]
@@ -103,10 +100,10 @@ mod tests {
         let mut buf = OutputRingBuffer::new();
         assert_eq!(buf.current_seq(), 0);
 
-        buf.push(b"a".to_vec());
+        buf.push(Bytes::from_static(b"a"));
         assert_eq!(buf.current_seq(), 1);
 
-        buf.push(b"b".to_vec());
+        buf.push(Bytes::from_static(b"b"));
         assert_eq!(buf.current_seq(), 2);
     }
 
@@ -114,7 +111,7 @@ mod tests {
     fn test_get_range() {
         let mut buf = OutputRingBuffer::new();
         for i in 0..5 {
-            buf.push(format!("line{}", i).into_bytes());
+            buf.push(Bytes::from(format!("line{}", i)));
         }
 
         let range = buf.get_range(2, 4);
@@ -128,7 +125,7 @@ mod tests {
     fn test_eviction_by_max_lines() {
         let mut buf = OutputRingBuffer::with_limits(3, 20 * 1024 * 1024);
         for i in 0..5 {
-            buf.push(format!("line{}", i).into_bytes());
+            buf.push(Bytes::from(format!("line{}", i)));
         }
 
         let all = buf.get_all();
@@ -142,7 +139,7 @@ mod tests {
         // Each entry is 100 bytes, max_bytes is 250 so only ~2 entries fit
         let mut buf = OutputRingBuffer::with_limits(10_000, 250);
         for _ in 0..5 {
-            buf.push(vec![0u8; 100]);
+            buf.push(Bytes::from(vec![0u8; 100]));
         }
 
         let all = buf.get_all();
@@ -155,7 +152,7 @@ mod tests {
     fn test_get_range_after_eviction() {
         let mut buf = OutputRingBuffer::with_limits(3, 20 * 1024 * 1024);
         for i in 0..10 {
-            buf.push(format!("line{}", i).into_bytes());
+            buf.push(Bytes::from(format!("line{}", i)));
         }
 
         // Only seqs 8, 9, 10 should remain
@@ -169,9 +166,9 @@ mod tests {
     #[test]
     fn test_monotonic_seq() {
         let mut buf = OutputRingBuffer::new();
-        let s1 = buf.push(b"a".to_vec());
-        let s2 = buf.push(b"b".to_vec());
-        let s3 = buf.push(b"c".to_vec());
+        let s1 = buf.push(Bytes::from_static(b"a"));
+        let s2 = buf.push(Bytes::from_static(b"b"));
+        let s3 = buf.push(Bytes::from_static(b"c"));
         assert!(s1 < s2);
         assert!(s2 < s3);
     }

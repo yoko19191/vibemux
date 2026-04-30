@@ -1,4 +1,5 @@
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
+use bytes::Bytes;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -40,7 +41,7 @@ impl PtyHost {
         cwd: &str,
         cols: u16,
         rows: u16,
-        output_tx: mpsc::UnboundedSender<Vec<u8>>,
+        output_tx: mpsc::UnboundedSender<Bytes>,
         exit_tx: mpsc::UnboundedSender<PtyExitStatus>,
     ) -> Result<Self, PtyError> {
         // Validate cwd
@@ -108,7 +109,7 @@ impl PtyHost {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        if output_tx.send(buf[..n].to_vec()).is_err() {
+                        if output_tx.send(Bytes::copy_from_slice(&buf[..n])).is_err() {
                             break;
                         }
                     }

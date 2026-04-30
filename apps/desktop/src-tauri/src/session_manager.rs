@@ -1,6 +1,8 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 
+use bytes::Bytes;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, Mutex};
@@ -25,7 +27,7 @@ const COLOR_CYCLE: [ColorToken; 8] = [
 pub enum MuxEvent {
     SessionOutput {
         session_id: Uuid,
-        data: Vec<u8>,
+        data: Bytes,
         seq: u64,
     },
     SessionExited {
@@ -42,7 +44,7 @@ pub enum MuxEvent {
     },
     ReplayChunk {
         session_id: Uuid,
-        data: Vec<u8>,
+        data: Bytes,
         seq: u64,
     },
     ReplayEnd {
@@ -61,8 +63,8 @@ struct ManagedSession {
     session: Session,
     pty: PtyHost,
     output_buffer: Arc<Mutex<OutputRingBuffer>>,
-    thermal_state: Arc<Mutex<ThermalState>>,
-    attention_state: Arc<Mutex<AttentionState>>,
+    thermal_state: Arc<AtomicU8>,
+    attention_state: Arc<AtomicU8>,
     screen_snapshot: Option<String>, // serialized xterm screen state saved on park
 }
 
@@ -113,7 +115,7 @@ impl SessionManager {
             SessionCommand::Command { program, args } => (program.clone(), args.clone()),
         };
 
-        let (output_tx, output_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+        let (output_tx, output_rx) = mpsc::unbounded_channel::<Bytes>();
         let (exit_tx, exit_rx) = mpsc::unbounded_channel::<PtyExitStatus>();
 
         let pty = PtyHost::spawn(&cmd_str, &args, &cwd, cols, rows, output_tx, exit_tx)
@@ -148,8 +150,8 @@ impl SessionManager {
             replay_buffer_lines.max(1),
             replay_buffer_bytes.max(1024),
         )));
-        let shared_thermal = Arc::new(Mutex::new(session.thermal_state.clone()));
-        let shared_attention = Arc::new(Mutex::new(session.attention_state.clone()));
+        let shared_thermal = Arc::new(AtomicU8::new(session.thermal_state.to_u8()));
+        let shared_attention = Arc::new(AtomicU8::new(session.attention_state.to_u8()));
 
         // Spawn output routing task
         let buf_clone = Arc::clone(&output_buffer);
@@ -233,9 +235,7 @@ impl SessionManager {
         if let Some(managed) = self.sessions.get_mut(&session_id) {
             managed.session.attention_state = state.clone();
             managed.session.updated_at = Utc::now();
-            if let Ok(mut attention) = managed.attention_state.try_lock() {
-                *attention = state;
-            }
+            managed.attention_state.store(state.to_u8(), Ordering::Release);
         }
     }
 
@@ -351,9 +351,7 @@ impl SessionManager {
 
         managed.session.thermal_state = ThermalState::Warm;
         managed.session.updated_at = Utc::now();
-        if let Ok(mut thermal) = managed.thermal_state.try_lock() {
-            *thermal = ThermalState::Warm;
-        }
+        managed.thermal_state.store(ThermalState::Warm.to_u8(), Ordering::Release);
 
         self.workspace
             .hot_session_ids
@@ -411,12 +409,8 @@ impl SessionManager {
         managed.session.thermal_state = ThermalState::Hot;
         managed.session.attention_state = AttentionState::Normal;
         managed.session.updated_at = Utc::now();
-        if let Ok(mut thermal) = managed.thermal_state.try_lock() {
-            *thermal = ThermalState::Hot;
-        }
-        if let Ok(mut attention) = managed.attention_state.try_lock() {
-            *attention = AttentionState::Normal;
-        }
+        managed.thermal_state.store(ThermalState::Hot.to_u8(), Ordering::Release);
+        managed.attention_state.store(AttentionState::Normal.to_u8(), Ordering::Release);
 
         self.workspace
             .warm_session_ids
@@ -433,7 +427,7 @@ impl SessionManager {
         tokio::spawn(async move {
             if let Some(snap) = snapshot {
                 // Replay snapshot as a single chunk — it's already a complete screen state
-                let data = snap.into_bytes();
+                let data = Bytes::from(snap.into_bytes());
                 let _ = event_tx.send(MuxEvent::ReplayStart {
                     session_id: sid,
                     from_seq: 0,
@@ -505,11 +499,11 @@ impl SessionManager {
 
     async fn route_output(
         session_id: Uuid,
-        mut output_rx: mpsc::UnboundedReceiver<Vec<u8>>,
+        mut output_rx: mpsc::UnboundedReceiver<Bytes>,
         buffer: Arc<Mutex<OutputRingBuffer>>,
         event_tx: mpsc::UnboundedSender<MuxEvent>,
-        thermal_state: Arc<Mutex<ThermalState>>,
-        attention_state: Arc<Mutex<AttentionState>>,
+        thermal_state: Arc<AtomicU8>,
+        attention_state: Arc<AtomicU8>,
     ) {
         while let Some(data) = output_rx.recv().await {
             let seq = {
@@ -517,30 +511,29 @@ impl SessionManager {
                 buf.push(data.clone())
             };
 
-            let thermal = thermal_state.lock().await.clone();
+            let thermal = ThermalState::from_u8(thermal_state.load(Ordering::Relaxed));
             if thermal == ThermalState::Hot {
                 let _ = event_tx.send(MuxEvent::SessionOutput {
                     session_id,
-                    data: data.clone(),
+                    data,
                     seq,
                 });
             } else if thermal == ThermalState::Warm {
                 let text = String::from_utf8_lossy(&data).to_lowercase();
                 let new_state = detect_attention_state(&text);
                 if let Some(new_attention) = new_state {
-                    let mut current = attention_state.lock().await;
-                    if *current != new_attention {
-                        *current = new_attention.clone();
+                    let current = AttentionState::from_u8(attention_state.load(Ordering::Relaxed));
+                    if current != new_attention {
+                        attention_state.store(new_attention.to_u8(), Ordering::Release);
                         let _ = event_tx.send(MuxEvent::AttentionChanged {
                             session_id,
                             attention_state: new_attention,
                         });
                     }
                 } else {
-                    // New output on warm session → Active (if not already Failed/NeedsInput/Done)
-                    let mut current = attention_state.lock().await;
-                    if *current == AttentionState::Normal {
-                        *current = AttentionState::Active;
+                    let current = AttentionState::from_u8(attention_state.load(Ordering::Relaxed));
+                    if current == AttentionState::Normal {
+                        attention_state.store(AttentionState::Active.to_u8(), Ordering::Release);
                         let _ = event_tx.send(MuxEvent::AttentionChanged {
                             session_id,
                             attention_state: AttentionState::Active,

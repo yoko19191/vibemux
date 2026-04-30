@@ -236,25 +236,44 @@
       return true;
     });
 
-    // Resize observer
+    // Resize observer (RAF-debounced to avoid flooding during window drag)
+    let resizeRafId: number | null = null;
     resizeObserver = new ResizeObserver(() => {
-      if (fitAddon) {
-        fitAddon.fit();
-        const dims = fitAddon.proposeDimensions();
-        if (dims) {
-          invoke("session_resize", {
-            sessionId,
-            cols: dims.cols,
-            rows: dims.rows,
-          }).catch(console.error);
+      if (resizeRafId) return;
+      resizeRafId = requestAnimationFrame(() => {
+        resizeRafId = null;
+        if (fitAddon) {
+          fitAddon.fit();
+          const dims = fitAddon.proposeDimensions();
+          if (dims) {
+            invoke("session_resize", {
+              sessionId,
+              cols: dims.cols,
+              rows: dims.rows,
+            }).catch(console.error);
+          }
         }
-      }
+      });
     });
     resizeObserver.observe(containerEl);
 
+    // RAF-batched output writing
+    let pendingOutput = '';
+    let outputRafId: number | null = null;
+    function flushOutput() {
+      if (pendingOutput && terminal) {
+        terminal.write(pendingOutput);
+        pendingOutput = '';
+      }
+      outputRafId = null;
+    }
+
     // Notify parent that terminal is ready
     onReady?.({
-      writeOutput: (data: string) => terminal?.write(data),
+      writeOutput: (data: string) => {
+        pendingOutput += data;
+        if (!outputRafId) outputRafId = requestAnimationFrame(flushOutput);
+      },
       triggerResize: () => {
         if (!terminal || !fitAddon) return;
         fitAddon.fit();

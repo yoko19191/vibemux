@@ -39,6 +39,7 @@
   // Buffer replay events that arrive before TerminalPane mounts
   let pendingReplays: Map<string, PendingReplay> = new Map();
   let unlisten: (() => void) | null = null;
+  let unlistenBatch: (() => void) | null = null;
   let selectedShelfIdx: number | null = $state(null);
   let renamingSessionId: string | null = $state(null);
   let prefixKeyConfig = $state("ctrl+b");
@@ -202,8 +203,7 @@
   });
 
   onMount(async () => {
-    unlisten = await listen<MuxEvent>("mux-event", (event) => {
-      const muxEvent = event.payload;
+    function handleMuxEvent(muxEvent: MuxEvent) {
       if (muxEvent.type === "sessionOutput") {
         const pending = pendingReplays.get(muxEvent.sessionId);
         if (pending) {
@@ -284,19 +284,35 @@
               .catch(console.error);
           });
       }
+    }
+
+    // Listen for batched events (new protocol) and legacy single events
+    unlistenBatch = await listen<MuxEvent[]>("mux-event-batch", (event) => {
+      for (const muxEvent of event.payload) {
+        handleMuxEvent(muxEvent);
+      }
+    });
+    unlisten = await listen<MuxEvent>("mux-event", (event) => {
+      handleMuxEvent(event.payload);
     });
 
     try {
-      homeCwd = await getHomeDir();
+      const [homeResult, cfgErrResult, cfgResult] = await Promise.allSettled([
+        getHomeDir(),
+        invoke<string | null>("config_get_error"),
+        invoke<any>("config_get"),
+      ]);
+
+      homeCwd = homeResult.status === "fulfilled" ? homeResult.value : "/";
       console.log("[vibemux] homeCwd:", homeCwd);
-      // Check for config load error
-      const cfgErr = await invoke<string | null>("config_get_error");
+
+      const cfgErr = cfgErrResult.status === "fulfilled" ? cfgErrResult.value : null;
       console.log("[vibemux] config_get_error done:", cfgErr);
       if (cfgErr) configError = cfgErr;
 
       // Load prefix key from config and check onboarding
-      try {
-        const cfg = await invoke<any>("config_get");
+      const cfg = cfgResult.status === "fulfilled" ? cfgResult.value : null;
+      if (cfg) {
         if (cfg?.keys?.prefix) {
           prefixKeyConfig = cfg.keys.prefix;
         }
@@ -307,8 +323,6 @@
           showOnboarding = true;
           return; // don't create session yet — onboarding will trigger it
         }
-      } catch {
-        // keep default
       }
 
       await createInitialSession();
@@ -320,6 +334,7 @@
 
   onDestroy(() => {
     unlisten?.();
+    unlistenBatch?.();
   });
 
   async function getHomeDir(): Promise<string> {

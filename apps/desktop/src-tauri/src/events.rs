@@ -112,7 +112,8 @@ fn convert_event(event: MuxEvent) -> FrontendEvent {
             seq,
         } => FrontendEvent::SessionOutput {
             session_id: session_id.to_string(),
-            data: String::from_utf8_lossy(&data).to_string(),
+            data: String::from_utf8(data.to_vec())
+                .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()),
             seq,
         },
         MuxEvent::SessionExited {
@@ -146,7 +147,8 @@ fn convert_event(event: MuxEvent) -> FrontendEvent {
             seq,
         } => FrontendEvent::ReplayChunk {
             session_id: session_id.to_string(),
-            data: String::from_utf8_lossy(&data).to_string(),
+            data: String::from_utf8(data.to_vec())
+                .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()),
             seq,
         },
         MuxEvent::ReplayEnd { session_id } => FrontendEvent::ReplayEnd {
@@ -169,9 +171,33 @@ fn flush_batch(app_handle: &AppHandle, batch: &mut Vec<FrontendEvent>) {
     if batch.is_empty() {
         return;
     }
+    // Coalesce consecutive SessionOutput events for the same session
+    let mut coalesced: Vec<FrontendEvent> = Vec::with_capacity(batch.len());
     for event in batch.drain(..) {
-        let _ = app_handle.emit("mux-event", &event);
+        match event {
+            FrontendEvent::SessionOutput {
+                ref session_id,
+                ref data,
+                seq,
+            } => {
+                if let Some(FrontendEvent::SessionOutput {
+                    session_id: ref prev_id,
+                    data: ref mut prev_data,
+                    seq: ref mut prev_seq,
+                }) = coalesced.last_mut()
+                {
+                    if prev_id == session_id {
+                        prev_data.push_str(data);
+                        *prev_seq = seq;
+                        continue;
+                    }
+                }
+                coalesced.push(event);
+            }
+            _ => coalesced.push(event),
+        }
     }
+    let _ = app_handle.emit("mux-event-batch", &coalesced);
 }
 
 pub fn emit_session_created(app_handle: &AppHandle, snapshot: SessionSnapshot) {

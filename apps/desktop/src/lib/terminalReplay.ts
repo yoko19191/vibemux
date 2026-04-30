@@ -3,7 +3,7 @@
  * Writes buffered output to xterm in chunks to avoid UI freeze.
  */
 
-const CHUNK_SIZE = 4096; // bytes per frame
+const CHUNK_SIZE = 32768; // bytes per frame (RAF gives ~16ms budget)
 const RESTORING_THRESHOLD_MS = 200;
 
 interface ReplayState {
@@ -76,7 +76,7 @@ export function onReplayEnd(sessionId: string) {
 export function cancelReplay(sessionId: string) {
   const state = activeReplays.get(sessionId);
   if (!state) return;
-  if (state.timer) clearTimeout(state.timer);
+  if (state.timer) cancelAnimationFrame(state.timer as unknown as number);
   if (state.restoringTimer) clearTimeout(state.restoringTimer);
   state.isReplaying = false;
   activeReplays.delete(sessionId);
@@ -87,7 +87,7 @@ export function isReplaying(sessionId: string): boolean {
 }
 
 function scheduleNextChunk(sessionId: string, state: ReplayState) {
-  state.timer = setTimeout(() => {
+  state.timer = requestAnimationFrame(() => {
     state.timer = null;
     const chunk = state.chunks.shift();
     if (chunk) {
@@ -98,7 +98,7 @@ function scheduleNextChunk(sessionId: string, state: ReplayState) {
     } else if (state.endRequested) {
       finishReplay(sessionId, state);
     }
-  }, 0);
+  }) as unknown as ReturnType<typeof setTimeout>;
 }
 
 function finishReplay(sessionId: string, state: ReplayState) {

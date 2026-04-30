@@ -871,7 +871,7 @@ mod tests {
         };
         let entries = vec![crate::ring_buffer::RingBufferEntry {
             seq: 1,
-            data: format!("{}\x1b[31mred\x1b[0m", "x".repeat(MAX_CONTEXT_BYTES + 16)).into_bytes(),
+            data: format!("{}\x1b[31mred\x1b[0m", "x".repeat(MAX_CONTEXT_BYTES + 16)).into_bytes().into(),
         }];
         let context = context_from_entries(&session, entries);
         assert!(context.truncated);
