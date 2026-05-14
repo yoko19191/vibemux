@@ -75,7 +75,7 @@ pub fn run() {
             // macOS app menu with custom About metadata
             let about_metadata = AboutMetadataBuilder::new()
                 .name(Some("Vibemux"))
-                .version(Some("1.2.1"))
+                .version(Some("1.2.3"))
                 .copyright(Some("Copyright © 2025 CGH"))
                 .credits(Some("https://github.com/yoko19191/vibemux"))
                 .build();

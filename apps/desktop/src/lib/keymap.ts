@@ -1,3 +1,5 @@
+import { detectDesktopPlatform, isMacOS } from "./platform";
+
 /**
  * Parses a prefix key config string like 'ctrl+b', 'cmd+space', 'ctrl+`', 'ctrl+a'
  * into a matcher object used to detect the key in keyboard events.
@@ -11,7 +13,7 @@ export interface PrefixKeyMatcher {
   code?: string; // optional, used for backtick
 }
 
-const isMac = typeof navigator !== "undefined" && navigator.platform.toUpperCase().includes("MAC");
+const isMac = isMacOS(detectDesktopPlatform());
 
 export function parsePrefixKey(configString: string): PrefixKeyMatcher {
   const parts = configString.toLowerCase().split("+");

@@ -6,10 +6,11 @@
   import OnboardingStep4 from "./OnboardingStep4.svelte";
 
   interface Props {
+    searchShortcut: string;
     onComplete: (prefixKey: string) => void;
   }
 
-  let { onComplete }: Props = $props();
+  let { searchShortcut, onComplete }: Props = $props();
 
   let step = $state(1);
   let chosenPrefixKey = $state("ctrl+b");
@@ -83,6 +84,7 @@
     {:else if step === 5}
       <OnboardingStep4
         prefixKey={chosenPrefixKey}
+        {searchShortcut}
         onStart={handleStep4Start}
         onBack={() => (step = 4)}
       />

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { presetThemes, type ThemePreset } from "./presetThemes.js";
+  import { detectDesktopPlatform, isMacOS } from "./platform";
 
   interface TerminalConfig {
     font_family: string;
@@ -60,6 +61,8 @@
   let aiModels: string[] = $state([]);
   let aiModelsLoading = $state(false);
   let aiModelsError: string | null = $state(null);
+  const platform = detectDesktopPlatform();
+  const isMac = isMacOS(platform);
 
   const PRESET_PREFIX_KEYS = [
     { label: "Ctrl+B (tmux style)", value: "ctrl+b" },
@@ -77,8 +80,14 @@
 
   $effect(() => {
     if (!initialTabApplied) {
-      activeTab = initialTab;
+      activeTab = initialTab === "privacy" && !isMac ? "terminal" : initialTab;
       initialTabApplied = true;
+    }
+  });
+
+  $effect(() => {
+    if (activeTab === "privacy" && !isMac) {
+      activeTab = "terminal";
     }
   });
 
@@ -200,7 +209,9 @@
       <button class="tab" class:active={activeTab === "theme"} onclick={() => (activeTab = "theme")}>Theme</button>
       <button class="tab" class:active={activeTab === "layout"} onclick={() => (activeTab = "layout")}>Layout</button>
       <button class="tab" class:active={activeTab === "keys"} onclick={() => (activeTab = "keys")}>Keys</button>
-      <button class="tab" class:active={activeTab === "privacy"} onclick={() => (activeTab = "privacy")}>Privacy</button>
+      {#if isMac}
+        <button class="tab" class:active={activeTab === "privacy"} onclick={() => (activeTab = "privacy")}>Privacy</button>
+      {/if}
       <button class="tab" class:active={activeTab === "ai"} onclick={() => (activeTab = "ai")}>AI</button>
     </div>
 
