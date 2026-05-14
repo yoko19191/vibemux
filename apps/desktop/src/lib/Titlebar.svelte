@@ -1,23 +1,83 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { isMacOS, primaryShortcutModifier, type DesktopPlatform } from "./platform";
+
+  type ResizeDirection = "East" | "North" | "NorthEast" | "NorthWest" | "South" | "SouthEast" | "SouthWest" | "West";
+
   interface Props {
     prefixKey: string;
     focusedTitle: string;
     focusedAccentColor: string;
-    isMacOS: boolean;
+    platform: DesktopPlatform;
     onNewSession: () => void;
     onSearch: () => void;
     onSettings: () => void;
   }
 
-  let { prefixKey, focusedTitle, focusedAccentColor, isMacOS, onNewSession, onSearch, onSettings }: Props = $props();
+  let { prefixKey, focusedTitle, focusedAccentColor, platform, onNewSession, onSearch, onSettings }: Props = $props();
+
+  const appWindow = getCurrentWindow();
+
+  let maximized = $state(false);
+  let isMac = $derived(isMacOS(platform));
+  let showsWindowControls = $derived(!isMac);
+  let searchShortcut = $derived(`${primaryShortcutModifier(platform)}+K`);
+  const resizeHandles: { direction: ResizeDirection; className: string }[] = [
+    { direction: "North", className: "resize-n" },
+    { direction: "South", className: "resize-s" },
+    { direction: "East", className: "resize-e" },
+    { direction: "West", className: "resize-w" },
+    { direction: "NorthEast", className: "resize-ne" },
+    { direction: "NorthWest", className: "resize-nw" },
+    { direction: "SouthEast", className: "resize-se" },
+    { direction: "SouthWest", className: "resize-sw" },
+  ];
+
+  onMount(() => {
+    if (showsWindowControls) {
+      appWindow.isMaximized().then((value) => (maximized = value)).catch(() => {});
+    }
+  });
+
+  function minimizeWindow() {
+    appWindow.minimize().catch(console.error);
+  }
+
+  async function toggleMaximize() {
+    try {
+      await appWindow.toggleMaximize();
+      maximized = await appWindow.isMaximized();
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  function hideWindow() {
+    appWindow.hide().catch(console.error);
+  }
+
+  function startResize(direction: ResizeDirection, e: PointerEvent) {
+    if (!showsWindowControls) return;
+    if (e.button !== 0) return;
+    e.preventDefault();
+    appWindow.startResizeDragging(direction).catch(console.error);
+  }
 </script>
 
 <div class="titlebar">
   <!-- Full-coverage drag layer sits behind everything -->
-  <div class="drag-layer" data-tauri-drag-region></div>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="drag-layer"
+    data-tauri-drag-region
+    ondblclick={() => {
+      if (showsWindowControls) toggleMaximize();
+    }}
+  ></div>
 
   <div class="titlebar-left">
-    {#if isMacOS}
+    {#if isMac}
       <div class="traffic-light-spacer"></div>
     {/if}
     <span class="prefix-hint">{prefixKey}</span>
@@ -37,7 +97,7 @@
     <button
       class="tb-btn"
       onclick={onSearch}
-      title="Search Sessions (Cmd+K or {prefixKey}, /)"
+      title="Search Sessions ({searchShortcut} or {prefixKey}, /)"
       aria-label="Search Sessions"
     >⌕</button>
     <button
@@ -46,7 +106,29 @@
       title="Settings"
       aria-label="Settings"
     >⚙</button>
+    {#if showsWindowControls}
+      <div class="window-controls" aria-label="Window controls">
+        <button class="window-btn" onclick={minimizeWindow} title="Minimize" aria-label="Minimize">-</button>
+        <button
+          class="window-btn"
+          onclick={toggleMaximize}
+          title={maximized ? "Restore" : "Maximize"}
+          aria-label={maximized ? "Restore" : "Maximize"}
+        >{maximized ? "▣" : "□"}</button>
+        <button class="window-btn close" onclick={hideWindow} title="Close to tray" aria-label="Close to tray">×</button>
+      </div>
+    {/if}
   </div>
+
+  {#if showsWindowControls}
+    {#each resizeHandles as handle}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="resize-handle {handle.className}"
+        onpointerdown={(e) => startResize(handle.direction, e)}
+      ></div>
+    {/each}
+  {/if}
 </div>
 
 <style>
@@ -140,5 +222,109 @@
   .tb-btn:hover {
     background: #2a2a2a;
     color: #d9d4c7;
+  }
+
+  .window-controls {
+    display: flex;
+    align-items: stretch;
+    align-self: stretch;
+    margin-left: 0.3rem;
+    border-left: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .window-btn {
+    width: 34px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: #777;
+    cursor: default;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 0.8rem;
+    line-height: 1;
+    padding: 0;
+    transition: background 100ms ease, color 100ms ease;
+  }
+
+  .window-btn:hover {
+    background: #2a2a2a;
+    color: #d9d4c7;
+  }
+
+  .window-btn.close:hover {
+    background: #c42b1c;
+    color: white;
+  }
+
+  .resize-handle {
+    position: fixed;
+    z-index: 200;
+  }
+
+  .resize-n,
+  .resize-s {
+    left: 6px;
+    right: 6px;
+    height: 6px;
+    cursor: ns-resize;
+  }
+
+  .resize-n {
+    top: 0;
+  }
+
+  .resize-s {
+    bottom: 0;
+  }
+
+  .resize-e,
+  .resize-w {
+    top: 6px;
+    bottom: 6px;
+    width: 6px;
+    cursor: ew-resize;
+  }
+
+  .resize-e {
+    right: 0;
+  }
+
+  .resize-w {
+    left: 0;
+  }
+
+  .resize-ne,
+  .resize-nw,
+  .resize-se,
+  .resize-sw {
+    width: 10px;
+    height: 10px;
+  }
+
+  .resize-ne {
+    top: 0;
+    right: 0;
+    cursor: nesw-resize;
+  }
+
+  .resize-nw {
+    top: 0;
+    left: 0;
+    cursor: nwse-resize;
+  }
+
+  .resize-se {
+    right: 0;
+    bottom: 0;
+    cursor: nwse-resize;
+  }
+
+  .resize-sw {
+    left: 0;
+    bottom: 0;
+    cursor: nesw-resize;
   }
 </style>

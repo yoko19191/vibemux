@@ -3,11 +3,12 @@
 
   interface Props {
     prefixKey: string;
+    searchShortcut: string;
     onStart: () => void;
     onBack: () => void;
   }
 
-  let { prefixKey, onStart, onBack }: Props = $props();
+  let { prefixKey, searchShortcut, onStart, onBack }: Props = $props();
 
   async function handleStart() {
     await invoke("config_update", { update: { onboarding_completed: true } }).catch(() => {});
@@ -22,7 +23,7 @@
   <div class="tip-box">
     <p class="tip">Press <kbd>{prefixKey}</kbd> to enter Navigation Mode.</p>
     <p class="tip">Try creating a new session with <kbd>{prefixKey}</kbd> then <kbd>N</kbd>.</p>
-    <p class="tip">Press <kbd>Cmd+K</kbd> to search. Ask AI is ready after setup, and can always be configured later in Settings > AI.</p>
+    <p class="tip">Press <kbd>{searchShortcut}</kbd> to search. Ask AI is ready after setup, and can always be configured later in Settings > AI.</p>
   </div>
 </div>
 

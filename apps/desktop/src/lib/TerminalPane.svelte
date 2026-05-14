@@ -9,6 +9,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { matchesPrefixKey } from "./keymap";
   import type { PrefixKeyMatcher } from "./keymap";
+  import { detectDesktopPlatform, isMacOS } from "./platform";
   import ContextMenu from "./ContextMenu.svelte";
   import type { ContextMenuItem } from "./ContextMenu.svelte";
 
@@ -49,6 +50,7 @@
   let contextMenu: { x: number; y: number } | null = $state(null);
   let hasSelection = $state(false);
   let pasteConfirmation: { text: string; lineCount: number } | null = $state(null);
+  const platform = detectDesktopPlatform();
 
   function closeContextMenu() {
     contextMenu = null;
@@ -178,7 +180,7 @@
       if (prefixKeyMatcher && matchesPrefixKey(e, prefixKeyMatcher)) {
         return false; // don't process — let it propagate to window
       }
-      const mod = navigator.platform.toUpperCase().includes("MAC") ? e.metaKey : e.ctrlKey;
+      const mod = isMacOS(platform) ? e.metaKey : e.ctrlKey;
       const key = e.key.toLowerCase();
       if (mod && key === "c" && hasSelection) {
         e.preventDefault();

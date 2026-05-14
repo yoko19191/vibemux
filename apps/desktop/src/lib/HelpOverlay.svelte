@@ -1,10 +1,11 @@
 <script lang="ts">
   interface Props {
     prefixKey: string;
+    searchShortcut: string;
     onClose: () => void;
   }
 
-  let { prefixKey, onClose }: Props = $props();
+  let { prefixKey, searchShortcut, onClose }: Props = $props();
 
   let bindings = $derived([
     { key: prefixKey, description: "Enter / exit Navigation Mode" },
@@ -16,6 +17,7 @@
     { key: "k / ↑", description: "Select previous detached session" },
     { key: "Enter", description: "Attach selected detached session" },
     { key: "r", description: "Rename current session" },
+    { key: searchShortcut, description: "Search sessions" },
     { key: "/", description: "Search sessions" },
     { key: "?", description: "Show this help" },
     { key: "x", description: "Close current session (graceful)" },

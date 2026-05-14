@@ -15,6 +15,7 @@
   import { parsePrefixKey, matchesPrefixKey, formatPrefixKey } from "./lib/keymap";
   import type { PrefixKeyMatcher } from "./lib/keymap";
   import { colorMap } from "./lib/colors";
+  import { detectDesktopPlatform, isMacOS, primaryShortcutModifier } from "./lib/platform";
 
   let sessions: SessionSnapshot[] = $state([]);
   let focusedSessionId: string | null = $state(null);
@@ -63,7 +64,8 @@
     return focused ? (colorMap[focused.color] ?? null) : null;
   });
 
-  const isMacOS = typeof navigator !== "undefined" && /mac/i.test(navigator.platform);
+  const platform = detectDesktopPlatform();
+  const searchShortcut = `${primaryShortcutModifier(platform)}+K`;
 
   let focusedTitle = $derived.by(() => {
     const s = sessions.find((s) => s.id === focusedSessionId && s.thermalState === "Hot");
@@ -432,8 +434,7 @@
     }
 
     // CMD+K (Mac) / Ctrl+K global search — works without nav mode
-    const isMac = navigator.platform.toUpperCase().includes("MAC");
-    if ((isMac ? e.metaKey : e.ctrlKey) && e.key === "k") {
+    if ((isMacOS(platform) ? e.metaKey : e.ctrlKey) && e.key === "k") {
       e.preventDefault();
       toggleSearch();
       return;
@@ -689,7 +690,7 @@
     prefixKey={prefixKeyDisplay}
     {focusedTitle}
     {focusedAccentColor}
-    {isMacOS}
+    {platform}
     onNewSession={requestNewSession}
     onSearch={openSearch}
     onSettings={() => {
@@ -831,12 +832,13 @@
   {#if showHelp}
     <HelpOverlay
       prefixKey={prefixKeyDisplay}
+      {searchShortcut}
       onClose={() => (showHelp = false)}
     />
   {/if}
 
   {#if showOnboarding}
-    <Onboarding onComplete={handleOnboardingComplete} />
+    <Onboarding {searchShortcut} onComplete={handleOnboardingComplete} />
   {/if}
 </main>
 
