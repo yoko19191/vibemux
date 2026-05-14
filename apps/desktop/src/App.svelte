@@ -23,7 +23,7 @@
   let navMode = $state(false);
   let showNewSession = $state(false);
   let showSettings = $state(false);
-  let settingsInitialTab: "terminal" | "theme" | "layout" | "keys" | "ai" = $state("terminal");
+  let settingsInitialTab: "terminal" | "theme" | "layout" | "keys" | "privacy" | "ai" = $state("terminal");
   let showSearch = $state(false);
   type SessionSearchComponentType = typeof import("./lib/SessionSearch.svelte").default;
   let SessionSearchComponent: SessionSearchComponentType | null = $state(null);

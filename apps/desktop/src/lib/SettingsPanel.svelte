@@ -48,13 +48,13 @@
   interface Props {
     onClose?: () => void;
     onConfigChange?: (config: UserConfig) => void;
-    initialTab?: "terminal" | "theme" | "layout" | "keys" | "ai";
+    initialTab?: "terminal" | "theme" | "layout" | "keys" | "privacy" | "ai";
   }
 
   let { onClose, onConfigChange, initialTab = "terminal" }: Props = $props();
 
   let config: UserConfig | null = $state(null);
-  let activeTab: "terminal" | "theme" | "layout" | "keys" | "ai" = $state("terminal");
+  let activeTab: "terminal" | "theme" | "layout" | "keys" | "privacy" | "ai" = $state("terminal");
   let saving = $state(false);
   let systemFonts: string[] = $state([]);
   let aiModels: string[] = $state([]);
@@ -172,6 +172,16 @@
     applyUpdate({ ai: { [field]: value } });
   }
 
+  async function openMacPrivacyPane() {
+    try {
+      await invoke("open_url", {
+        url: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
+      });
+    } catch (e) {
+      console.error("Failed to open macOS privacy settings:", e);
+    }
+  }
+
   loadConfig();
   loadFonts();
 </script>
@@ -190,6 +200,7 @@
       <button class="tab" class:active={activeTab === "theme"} onclick={() => (activeTab = "theme")}>Theme</button>
       <button class="tab" class:active={activeTab === "layout"} onclick={() => (activeTab = "layout")}>Layout</button>
       <button class="tab" class:active={activeTab === "keys"} onclick={() => (activeTab = "keys")}>Keys</button>
+      <button class="tab" class:active={activeTab === "privacy"} onclick={() => (activeTab = "privacy")}>Privacy</button>
       <button class="tab" class:active={activeTab === "ai"} onclick={() => (activeTab = "ai")}>AI</button>
     </div>
 
@@ -343,6 +354,21 @@
               />
             </div>
           {/if}
+        </div>
+      {:else if activeTab === "privacy"}
+        <div class="section">
+          <div class="privacy-callout">
+            <div class="privacy-title">macOS Full Disk Access</div>
+            <p>
+              Terminal commands run inside Vibemux are attributed to Vibemux.app by macOS.
+              Granting Full Disk Access once can prevent repeated prompts when tools scan protected folders.
+            </p>
+          </div>
+          <button class="primary-btn" onclick={openMacPrivacyPane}>Open Full Disk Access</button>
+          <div class="privacy-note">
+            Add Vibemux.app in System Settings, then restart Vibemux so new shells inherit the permission.
+            macOS still requires you to approve this manually.
+          </div>
         </div>
       {:else if activeTab === "ai"}
         <div class="section">
@@ -572,6 +598,48 @@
 
   .secondary-btn:not(:disabled):hover {
     border-color: #555;
+  }
+
+  .primary-btn {
+    align-self: flex-start;
+    background: #2563eb;
+    border: 1px solid #3b82f6;
+    border-radius: 4px;
+    color: #fff;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.75rem;
+    padding: 0.35rem 0.65rem;
+  }
+
+  .primary-btn:hover {
+    background: #1d4ed8;
+  }
+
+  .privacy-callout {
+    background: #111;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 0.65rem 0.75rem;
+  }
+
+  .privacy-title {
+    color: #d9d4c7;
+    font-size: 0.78rem;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+  }
+
+  .privacy-callout p,
+  .privacy-note {
+    color: #999;
+    font-size: 0.72rem;
+    line-height: 1.4;
+    margin: 0;
+  }
+
+  .privacy-note {
+    color: #777;
   }
 
   .inline-error {
