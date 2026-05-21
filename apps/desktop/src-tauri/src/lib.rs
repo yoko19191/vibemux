@@ -34,6 +34,7 @@ pub fn run() {
     let ai_state: AiState = Arc::new(Mutex::new(AiStore::load()));
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(state)
         .manage(config_state)
         .manage(config_error_state)

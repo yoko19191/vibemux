@@ -7,6 +7,7 @@
   import { WebLinksAddon } from "@xterm/addon-web-links";
   import { SerializeAddon } from "@xterm/addon-serialize";
   import { invoke } from "@tauri-apps/api/core";
+  import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
   import { matchesPrefixKey } from "./keymap";
   import type { PrefixKeyMatcher } from "./keymap";
   import { detectDesktopPlatform, isMacOS } from "./platform";
@@ -44,6 +45,7 @@
   let serializeAddon: SerializeAddon | null = null;
   let resizeObserver: ResizeObserver | null = null;
   let textareaPasteController: AbortController | null = null;
+  let contextMenuController: AbortController | null = null;
   let rendererType: 'webgl' | 'canvas' = $state('webgl');
 
   // Context menu state
@@ -56,9 +58,14 @@
     contextMenu = null;
   }
 
-  function handleCopy() {
+  async function copySelection() {
     const sel = terminal?.getSelection();
-    if (sel) navigator.clipboard.writeText(sel).catch(console.error);
+    if (!sel) return;
+    await writeText(sel);
+  }
+
+  async function handleCopy() {
+    await copySelection().catch((e) => console.error("Copy failed:", e));
     closeContextMenu();
   }
 
@@ -69,7 +76,7 @@
 
   async function pasteFromClipboard() {
     try {
-      const text = await navigator.clipboard.readText();
+      const text = await readText();
       pasteText(text);
     } catch (e) {
       console.error("Paste failed:", e);
@@ -175,16 +182,39 @@
       signal: textareaPasteController.signal,
     });
 
+    contextMenuController = new AbortController();
+    containerEl.addEventListener("contextmenu", handleContextMenu, {
+      capture: true,
+      signal: contextMenuController.signal,
+    });
+
     // Let global shortcuts and clipboard operations bypass xterm's default key handling.
     terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
       if (prefixKeyMatcher && matchesPrefixKey(e, prefixKeyMatcher)) {
         return false; // don't process — let it propagate to window
       }
-      const mod = isMacOS(platform) ? e.metaKey : e.ctrlKey;
+      if (e.type !== "keydown") {
+        return true;
+      }
       const key = e.key.toLowerCase();
-      if (mod && key === "c" && hasSelection) {
+      const isMac = isMacOS(platform);
+      const isCopyShortcut = isMac
+        ? e.metaKey && key === "c" && hasSelection
+        : e.ctrlKey && e.shiftKey && key === "c" && hasSelection;
+      const isPasteShortcut = isMac
+        ? e.metaKey && key === "v"
+        : (e.ctrlKey && e.shiftKey && key === "v") || (e.shiftKey && e.key === "Insert");
+
+      if (isCopyShortcut) {
         e.preventDefault();
-        handleCopy();
+        e.stopImmediatePropagation();
+        void copySelection().catch((err) => console.error("Copy failed:", err));
+        return false;
+      }
+      if (isPasteShortcut) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        void pasteFromClipboard();
         return false;
       }
       return true;
@@ -309,12 +339,14 @@
 
   onDestroy(() => {
     textareaPasteController?.abort();
+    contextMenuController?.abort();
     resizeObserver?.disconnect();
     terminal?.dispose();
   });
 
   function handleContextMenu(e: MouseEvent) {
     e.preventDefault();
+    e.stopImmediatePropagation();
     contextMenu = { x: e.clientX, y: e.clientY };
   }
 
@@ -332,7 +364,6 @@
 <div
   class="terminal-wrapper"
   bind:this={containerEl}
-  oncontextmenu={handleContextMenu}
 ></div>
 
 {#if contextMenu}
