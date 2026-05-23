@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -152,7 +152,118 @@ impl Default for AiConfig {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionProfileKind {
+    LocalShell,
+    Wsl,
+    Ssh,
+    Command,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "snake_case", default)]
+pub struct SessionProfile {
+    pub id: String,
+    pub name: String,
+    pub kind: SessionProfileKind,
+    pub cwd: Option<String>,
+    pub shell: Option<String>,
+    pub program: Option<String>,
+    pub args: Vec<String>,
+    pub distro: Option<String>,
+    pub host: Option<String>,
+    pub ssh_config_host: Option<String>,
+    pub user: Option<String>,
+    pub port: Option<u16>,
+    pub identity_file: Option<String>,
+    pub remote_cwd: Option<String>,
+}
+
+impl Default for SessionProfile {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            kind: SessionProfileKind::LocalShell,
+            cwd: None,
+            shell: None,
+            program: None,
+            args: vec![],
+            distro: None,
+            host: None,
+            ssh_config_host: None,
+            user: None,
+            port: None,
+            identity_file: None,
+            remote_cwd: None,
+        }
+    }
+}
+
+impl SessionProfile {
+    pub fn default_local_shell(shell: &ShellConfig) -> Self {
+        Self {
+            id: "default-local-shell".to_string(),
+            name: "Default Shell".to_string(),
+            kind: SessionProfileKind::LocalShell,
+            cwd: None,
+            shell: Some(shell.default.clone()),
+            ..Self::default()
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "snake_case", default)]
+pub struct ProfilesConfig {
+    pub default_profile_id: Option<String>,
+    pub last_used_profile_id: Option<String>,
+    pub items: Vec<SessionProfile>,
+}
+
+impl Default for ProfilesConfig {
+    fn default() -> Self {
+        Self::from_shell(&ShellConfig::default())
+    }
+}
+
+impl ProfilesConfig {
+    pub fn from_shell(shell: &ShellConfig) -> Self {
+        Self {
+            default_profile_id: Some("default-local-shell".to_string()),
+            last_used_profile_id: Some("default-local-shell".to_string()),
+            items: vec![SessionProfile::default_local_shell(shell)],
+        }
+    }
+
+    pub fn ensure_default(mut self, shell: &ShellConfig) -> Self {
+        if self.items.is_empty() {
+            return Self::from_shell(shell);
+        }
+
+        if self.default_profile_id.is_none()
+            || !self
+                .items
+                .iter()
+                .any(|p| Some(&p.id) == self.default_profile_id.as_ref())
+        {
+            self.default_profile_id = self.items.first().map(|p| p.id.clone());
+        }
+
+        if self
+            .last_used_profile_id
+            .as_ref()
+            .is_some_and(|id| !self.items.iter().any(|p| &p.id == id))
+        {
+            self.last_used_profile_id = self.default_profile_id.clone();
+        }
+
+        self
+    }
+}
+
+#[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "snake_case", default)]
 pub struct UserConfig {
     pub terminal: TerminalConfig,
@@ -161,7 +272,62 @@ pub struct UserConfig {
     pub shell: ShellConfig,
     pub keys: KeysConfig,
     pub ai: AiConfig,
+    pub profiles: ProfilesConfig,
     pub onboarding_completed: bool,
+}
+
+impl Default for UserConfig {
+    fn default() -> Self {
+        let shell = ShellConfig::default();
+        Self {
+            terminal: TerminalConfig::default(),
+            theme: ThemeConfig::default(),
+            layout: LayoutConfig::default(),
+            profiles: ProfilesConfig::from_shell(&shell),
+            shell,
+            keys: KeysConfig::default(),
+            ai: AiConfig::default(),
+            onboarding_completed: false,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for UserConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize, Default)]
+        #[serde(rename_all = "snake_case", default)]
+        struct RawUserConfig {
+            terminal: Option<TerminalConfig>,
+            theme: Option<ThemeConfig>,
+            layout: Option<LayoutConfig>,
+            shell: Option<ShellConfig>,
+            keys: Option<KeysConfig>,
+            ai: Option<AiConfig>,
+            profiles: Option<ProfilesConfig>,
+            onboarding_completed: Option<bool>,
+        }
+
+        let raw = RawUserConfig::deserialize(deserializer)?;
+        let shell = raw.shell.unwrap_or_default();
+        let profiles = raw
+            .profiles
+            .unwrap_or_else(|| ProfilesConfig::from_shell(&shell))
+            .ensure_default(&shell);
+
+        Ok(Self {
+            terminal: raw.terminal.unwrap_or_default(),
+            theme: raw.theme.unwrap_or_default(),
+            layout: raw.layout.unwrap_or_default(),
+            shell,
+            keys: raw.keys.unwrap_or_default(),
+            ai: raw.ai.unwrap_or_default(),
+            profiles,
+            onboarding_completed: raw.onboarding_completed.unwrap_or(false),
+        })
+    }
 }
 
 pub type ConfigState = Arc<Mutex<UserConfig>>;
@@ -237,4 +403,44 @@ pub fn save_config(config: &UserConfig) -> Result<(), String> {
         .map_err(|e| format!("failed to write temp config: {}", e))?;
     std::fs::rename(&tmp_path, &path).map_err(|e| format!("failed to rename config: {}", e))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_creates_a_local_shell_profile() {
+        let cfg = UserConfig::default();
+
+        assert_eq!(
+            cfg.profiles.default_profile_id.as_deref(),
+            Some("default-local-shell")
+        );
+        assert_eq!(
+            cfg.profiles.last_used_profile_id.as_deref(),
+            Some("default-local-shell")
+        );
+        assert_eq!(cfg.profiles.items.len(), 1);
+        assert_eq!(cfg.profiles.items[0].id, "default-local-shell");
+        assert!(matches!(
+            cfg.profiles.items[0].kind,
+            SessionProfileKind::LocalShell
+        ));
+    }
+
+    #[test]
+    fn legacy_config_without_profiles_gets_default_profiles() {
+        let cfg: UserConfig = toml::from_str(
+            r#"
+            [shell]
+            default = "/bin/bash"
+            "#,
+        )
+        .expect("legacy config should still deserialize");
+
+        assert_eq!(cfg.shell.default, "/bin/bash");
+        assert_eq!(cfg.profiles.items.len(), 1);
+        assert_eq!(cfg.profiles.items[0].shell.as_deref(), Some("/bin/bash"));
+    }
 }

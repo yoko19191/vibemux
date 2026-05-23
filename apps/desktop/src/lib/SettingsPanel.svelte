@@ -2,62 +2,31 @@
   import { invoke } from "@tauri-apps/api/core";
   import { presetThemes, type ThemePreset } from "./presetThemes.js";
   import { detectDesktopPlatform, isMacOS } from "./platform";
-
-  interface TerminalConfig {
-    font_family: string;
-    font_size: number;
-    line_height: number;
-  }
-
-  interface ThemeConfig {
-    background: string;
-    foreground: string;
-    cursor: string;
-    selection: string;
-    black: string; red: string; green: string; yellow: string;
-    blue: string; magenta: string; cyan: string; white: string;
-    bright_black: string; bright_red: string; bright_green: string; bright_yellow: string;
-    bright_blue: string; bright_magenta: string; bright_cyan: string; bright_white: string;
-  }
-
-  interface LayoutConfig {
-    focused_pane_width: number;
-    animation_ms: number;
-    max_hot_sessions: number;
-  }
-
-  interface KeysConfig {
-    prefix: string;
-  }
-
-  interface AiConfig {
-    enabled: boolean;
-    base_url: string;
-    api_key: string;
-    model: string;
-    system_prompt: string;
-  }
-
-  interface UserConfig {
-    terminal: TerminalConfig;
-    theme: ThemeConfig;
-    layout: LayoutConfig;
-    keys: KeysConfig;
-    ai: AiConfig;
-  }
+  import type {
+    AiConfig,
+    LayoutConfig,
+    SessionCapabilities,
+    SessionProfile,
+    SessionProfileKind,
+    TerminalConfig,
+    ThemeConfig,
+    UserConfig,
+    SshConfigHost,
+  } from "./types";
 
   interface Props {
     onClose?: () => void;
     onConfigChange?: (config: UserConfig) => void;
-    initialTab?: "terminal" | "theme" | "layout" | "keys" | "privacy" | "ai";
+    initialTab?: "terminal" | "theme" | "layout" | "keys" | "profiles" | "privacy" | "ai";
   }
 
   let { onClose, onConfigChange, initialTab = "terminal" }: Props = $props();
 
   let config: UserConfig | null = $state(null);
-  let activeTab: "terminal" | "theme" | "layout" | "keys" | "privacy" | "ai" = $state("terminal");
+  let activeTab: "terminal" | "theme" | "layout" | "keys" | "profiles" | "privacy" | "ai" = $state("terminal");
   let saving = $state(false);
   let systemFonts: string[] = $state([]);
+  let capabilities: SessionCapabilities | null = $state(null);
   let aiModels: string[] = $state([]);
   let aiModelsLoading = $state(false);
   let aiModelsError: string | null = $state(null);
@@ -107,6 +76,7 @@
   async function loadConfig() {
     try {
       config = await invoke<UserConfig>("config_get");
+      capabilities = await invoke<SessionCapabilities>("detect_session_capabilities");
     } catch (e) {
       console.error("Failed to load config:", e);
     }
@@ -181,6 +151,94 @@
     applyUpdate({ ai: { [field]: value } });
   }
 
+  function parseArgs(value: string) {
+    return value
+      .split(" ")
+      .map((part) => part.trim())
+      .filter(Boolean);
+  }
+
+  function createProfile(kind: SessionProfileKind) {
+    const shell = config?.shell.default || capabilities?.shells[0] || "/bin/zsh";
+    const profile: SessionProfile = {
+      id: `${kind}-${Date.now()}`,
+      name: kind === "local_shell" ? "Local Shell" : kind === "wsl" ? "WSL" : kind === "ssh" ? "SSH" : "Command",
+      kind,
+      cwd: kind === "ssh" ? undefined : undefined,
+      shell: kind === "local_shell" ? shell : kind === "wsl" ? "bash" : undefined,
+      program: kind === "command" ? "python3" : undefined,
+      args: [],
+      distro: kind === "wsl" ? capabilities?.wslDistros[0] : undefined,
+      host: kind === "ssh" ? "" : undefined,
+      ssh_config_host: undefined,
+      user: undefined,
+      port: kind === "ssh" ? 22 : undefined,
+      identity_file: undefined,
+      remote_cwd: undefined,
+    };
+    const items = [...(config?.profiles.items ?? []), profile];
+    applyUpdate({
+      profiles: {
+        ...config?.profiles,
+        default_profile_id: config?.profiles.default_profile_id ?? profile.id,
+        items,
+      },
+    });
+  }
+
+  function updateProfile(profile: SessionProfile, patch: Partial<SessionProfile>) {
+    if (!config) return;
+    const items = config.profiles.items.map((item) =>
+      item.id === profile.id ? { ...item, ...patch } : item,
+    );
+    applyUpdate({ profiles: { ...config.profiles, items } });
+  }
+
+  function deleteProfile(profile: SessionProfile) {
+    if (!config) return;
+    const items = config.profiles.items.filter((item) => item.id !== profile.id);
+    const default_profile_id =
+      config.profiles.default_profile_id === profile.id
+        ? items[0]?.id ?? null
+        : config.profiles.default_profile_id;
+    const last_used_profile_id =
+      config.profiles.last_used_profile_id === profile.id
+        ? default_profile_id
+        : config.profiles.last_used_profile_id;
+    applyUpdate({ profiles: { ...config.profiles, default_profile_id, last_used_profile_id, items } });
+  }
+
+  function setDefaultProfile(profileId: string) {
+    if (!config) return;
+    applyUpdate({ profiles: { ...config.profiles, default_profile_id: profileId } });
+  }
+
+  function profileKindLabel(kind: SessionProfileKind) {
+    if (kind === "local_shell") return "Local";
+    return kind.toUpperCase();
+  }
+
+  function sshConfigLabel(host: SshConfigHost) {
+    const target = host.user ? `${host.user}@${host.alias}` : host.alias;
+    return host.hostname ? `${target} -> ${host.hostname}` : target;
+  }
+
+  function applySshConfigHost(profile: SessionProfile, alias: string) {
+    if (!alias) {
+      updateProfile(profile, { ssh_config_host: null });
+      return;
+    }
+    const host = capabilities?.sshConfigHosts.find((candidate) => candidate.alias === alias);
+    if (!host) return;
+    updateProfile(profile, {
+      host: host.alias,
+      ssh_config_host: host.alias,
+      user: null,
+      port: null,
+      identity_file: null,
+    });
+  }
+
   async function openMacPrivacyPane() {
     try {
       await invoke("open_url", {
@@ -209,6 +267,7 @@
       <button class="tab" class:active={activeTab === "theme"} onclick={() => (activeTab = "theme")}>Theme</button>
       <button class="tab" class:active={activeTab === "layout"} onclick={() => (activeTab = "layout")}>Layout</button>
       <button class="tab" class:active={activeTab === "keys"} onclick={() => (activeTab = "keys")}>Keys</button>
+      <button class="tab" class:active={activeTab === "profiles"} onclick={() => (activeTab = "profiles")}>Profiles</button>
       {#if isMac}
         <button class="tab" class:active={activeTab === "privacy"} onclick={() => (activeTab = "privacy")}>Privacy</button>
       {/if}
@@ -366,6 +425,207 @@
             </div>
           {/if}
         </div>
+      {:else if activeTab === "profiles"}
+        <div class="section">
+          <div class="field">
+            <span>Default Profile</span>
+            <select
+              value={config.profiles.default_profile_id ?? ""}
+              onchange={(e) => setDefaultProfile((e.target as HTMLSelectElement).value)}
+            >
+              {#each config.profiles.items as profile}
+                <option value={profile.id}>{profile.name} · {profileKindLabel(profile.kind)}</option>
+              {/each}
+            </select>
+          </div>
+
+          <div class="profile-actions">
+            <button class="secondary-btn" onclick={() => createProfile("local_shell")}>Add Local</button>
+            {#if capabilities?.platform === "windows"}
+              <button class="secondary-btn" onclick={() => createProfile("wsl")}>Add WSL</button>
+            {/if}
+            <button class="secondary-btn" onclick={() => createProfile("ssh")}>Add SSH</button>
+            <button class="secondary-btn" onclick={() => createProfile("command")}>Add Command</button>
+          </div>
+
+          <div class="profiles-list">
+            {#each config.profiles.items as profile (profile.id)}
+              <div class="profile-row">
+                <div class="profile-row-header">
+                  <span
+                    class:kind-local={profile.kind === "local_shell"}
+                    class:kind-ssh={profile.kind === "ssh"}
+                    class:kind-command={profile.kind === "command"}
+                    class:kind-wsl={profile.kind === "wsl"}
+                    class="profile-kind"
+                  >
+                    {profileKindLabel(profile.kind)}
+                  </span>
+                  {#if config.profiles.default_profile_id === profile.id}
+                    <span class="profile-default">Default</span>
+                  {:else}
+                    <button class="link-btn" onclick={() => setDefaultProfile(profile.id)}>Make Default</button>
+                  {/if}
+                  <button class="link-btn danger" onclick={() => deleteProfile(profile)}>Delete</button>
+                </div>
+
+                <label class="field">
+                  <span>Name</span>
+                  <input
+                    type="text"
+                    value={profile.name}
+                    onchange={(e) => updateProfile(profile, { name: (e.target as HTMLInputElement).value })}
+                  />
+                </label>
+
+                {#if profile.kind !== "ssh"}
+                  <label class="field">
+                    <span>Local Working Directory</span>
+                    <input
+                      type="text"
+                      value={profile.cwd ?? ""}
+                      placeholder="Use current directory"
+                      onchange={(e) => updateProfile(profile, { cwd: (e.target as HTMLInputElement).value || null })}
+                    />
+                  </label>
+                {/if}
+
+                {#if profile.kind === "local_shell"}
+                  <label class="field">
+                    <span>Shell</span>
+                    <select
+                      value={profile.shell ?? config.shell.default}
+                      onchange={(e) => updateProfile(profile, { shell: (e.target as HTMLSelectElement).value })}
+                    >
+                      {#each capabilities?.shells ?? [] as shell}
+                        <option value={shell}>{shell}</option>
+                      {/each}
+                      {#if profile.shell && !(capabilities?.shells ?? []).includes(profile.shell)}
+                        <option value={profile.shell}>{profile.shell}</option>
+                      {/if}
+                    </select>
+                  </label>
+                {:else if profile.kind === "wsl"}
+                  <div class="field-grid">
+                    <label class="field">
+                      <span>Distro</span>
+                      <input
+                        type="text"
+                        value={profile.distro ?? ""}
+                        placeholder="Ubuntu"
+                        onchange={(e) => updateProfile(profile, { distro: (e.target as HTMLInputElement).value || null })}
+                      />
+                    </label>
+                    <label class="field">
+                      <span>Shell</span>
+                      <input
+                        type="text"
+                        value={profile.shell ?? ""}
+                        placeholder="bash"
+                        onchange={(e) => updateProfile(profile, { shell: (e.target as HTMLInputElement).value || null })}
+                      />
+                    </label>
+                  </div>
+                  <label class="field">
+                    <span>Linux Working Directory</span>
+                    <input
+                      type="text"
+                      value={profile.remote_cwd ?? ""}
+                      placeholder="~"
+                      onchange={(e) => updateProfile(profile, { remote_cwd: (e.target as HTMLInputElement).value || null })}
+                    />
+                  </label>
+                {:else if profile.kind === "ssh"}
+                  {#if (capabilities?.sshConfigHosts ?? []).length > 0}
+                    <label class="field">
+                      <span>SSH Config</span>
+                      <select
+                        value={profile.ssh_config_host ?? ""}
+                        onchange={(e) => applySshConfigHost(profile, (e.target as HTMLSelectElement).value)}
+                      >
+                        <option value="">Manual SSH fields</option>
+                        {#each capabilities?.sshConfigHosts ?? [] as host}
+                          <option value={host.alias}>{sshConfigLabel(host)}</option>
+                        {/each}
+                      </select>
+                    </label>
+                  {/if}
+                  {#if !profile.ssh_config_host}
+                    <div class="profile-field-row">
+                      <label class="field">
+                        <span>Host</span>
+                        <input
+                          type="text"
+                          value={profile.host ?? ""}
+                          placeholder="example.com"
+                          onchange={(e) => updateProfile(profile, { host: (e.target as HTMLInputElement).value || null })}
+                        />
+                      </label>
+                      <label class="field">
+                        <span>User</span>
+                        <input
+                          type="text"
+                          value={profile.user ?? ""}
+                          placeholder="deploy"
+                          onchange={(e) => updateProfile(profile, { user: (e.target as HTMLInputElement).value || null })}
+                        />
+                      </label>
+                    </div>
+                    <div class="profile-field-row">
+                      <label class="field">
+                        <span>Port</span>
+                        <input
+                          type="number"
+                          min="1"
+                          max="65535"
+                          value={profile.port ?? 22}
+                          onchange={(e) => updateProfile(profile, { port: parseInt((e.target as HTMLInputElement).value) || null })}
+                        />
+                      </label>
+                      <label class="field">
+                        <span>Identity File</span>
+                        <input
+                          type="text"
+                          value={profile.identity_file ?? ""}
+                          placeholder="~/.ssh/id_ed25519"
+                          onchange={(e) => updateProfile(profile, { identity_file: (e.target as HTMLInputElement).value || null })}
+                        />
+                      </label>
+                    </div>
+                  {/if}
+                  <label class="field">
+                    <span>Remote Directory</span>
+                    <input
+                      type="text"
+                      value={profile.remote_cwd ?? ""}
+                      placeholder="~/app"
+                      onchange={(e) => updateProfile(profile, { remote_cwd: (e.target as HTMLInputElement).value || null })}
+                    />
+                  </label>
+                {:else}
+                  <label class="field">
+                    <span>Program</span>
+                    <input
+                      type="text"
+                      value={profile.program ?? ""}
+                      placeholder="python3"
+                      onchange={(e) => updateProfile(profile, { program: (e.target as HTMLInputElement).value || null })}
+                    />
+                  </label>
+                  <label class="field">
+                    <span>Arguments</span>
+                    <input
+                      type="text"
+                      value={profile.args.join(" ")}
+                      placeholder="-m http.server 8000"
+                      onchange={(e) => updateProfile(profile, { args: parseArgs((e.target as HTMLInputElement).value) })}
+                    />
+                  </label>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        </div>
       {:else if activeTab === "privacy"}
         <div class="section">
           <div class="privacy-callout">
@@ -465,7 +725,7 @@
     background: #1a1a1a;
     border: 1px solid #333;
     border-radius: 8px;
-    width: 480px;
+    width: min(760px, calc(100vw - 48px));
     max-height: 80vh;
     display: flex;
     flex-direction: column;
@@ -522,23 +782,26 @@
 
   .section {
     overflow-y: auto;
-    padding: 0.75rem 1rem;
+    padding: 1rem 1.35rem 1.2rem;
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: 0.9rem;
   }
 
   .field {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
+    gap: 0.75rem;
+    min-width: 0;
   }
 
   .field span {
-    font-size: 0.75rem;
-    color: #999;
+    color: #a7a3a0;
     flex-shrink: 0;
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1.25;
     min-width: 140px;
   }
 
@@ -548,12 +811,17 @@
   .field select,
   .field textarea {
     flex: 1;
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
     background: #111;
     border: 1px solid #333;
     border-radius: 4px;
     color: #d9d4c7;
-    font-size: 0.75rem;
-    padding: 0.25rem 0.5rem;
+    font-size: 0.84rem;
+    min-height: 2.25rem;
+    line-height: 1.25;
+    padding: 0.42rem 0.62rem;
     font-family: inherit;
   }
 
@@ -597,8 +865,8 @@
     color: #d9d4c7;
     cursor: pointer;
     font-family: inherit;
-    font-size: 0.72rem;
-    padding: 0.25rem 0.5rem;
+    font-size: 0.78rem;
+    padding: 0.38rem 0.65rem;
     white-space: nowrap;
   }
 
@@ -609,6 +877,122 @@
 
   .secondary-btn:not(:disabled):hover {
     border-color: #555;
+  }
+
+  .profile-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .profiles-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1.15rem;
+  }
+
+  .profile-row {
+    background: #111;
+    border: 1px solid #303036;
+    border-radius: 7px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.95rem;
+    min-width: 0;
+    overflow: hidden;
+    padding: 1.15rem 1.25rem;
+  }
+
+  .profile-row-header {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin-bottom: 0.1rem;
+  }
+
+  .profile-row .field {
+    align-items: stretch;
+    flex: 0 0 auto;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+
+  .profile-row .field span {
+    color: #a7a3a0;
+    font-size: 0.82rem;
+    line-height: 1.25;
+    min-width: 0;
+  }
+
+  .profile-kind,
+  .profile-default {
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
+    color: #d9d4c7;
+    font-size: 0.66rem;
+    padding: 0.15rem 0.35rem;
+  }
+
+  .kind-local {
+    border-color: rgba(34, 197, 94, 0.65);
+    color: #86efac;
+  }
+
+  .kind-ssh {
+    border-color: rgba(59, 130, 246, 0.7);
+    color: #93c5fd;
+  }
+
+  .kind-command {
+    border-color: rgba(234, 179, 8, 0.72);
+    color: #fde68a;
+  }
+
+  .kind-wsl {
+    border-color: rgba(6, 182, 212, 0.7);
+    color: #67e8f9;
+  }
+
+  .profile-default {
+    border-color: #2563eb;
+    color: #93c5fd;
+  }
+
+  .link-btn {
+    background: none;
+    border: none;
+    color: #93c5fd;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.7rem;
+    padding: 0.1rem 0.25rem;
+  }
+
+  .link-btn.danger {
+    color: #f87171;
+    margin-left: auto;
+  }
+
+  .field-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.85rem;
+  }
+
+  .profile-field-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.85rem;
+  }
+
+  .field-grid .field {
+    flex: 1 1 220px;
+    min-width: 180px;
+  }
+
+  .profile-field-row .field {
+    flex: 1 1 220px;
+    min-width: 180px;
   }
 
   .primary-btn {

@@ -103,6 +103,100 @@ export interface AiFocusedContext {
   truncated: boolean;
 }
 
+export type SessionProfileKind = "local_shell" | "wsl" | "ssh" | "command";
+
+export interface SessionProfile {
+  id: string;
+  name: string;
+  kind: SessionProfileKind;
+  cwd?: string | null;
+  shell?: string | null;
+  program?: string | null;
+  args: string[];
+  distro?: string | null;
+  host?: string | null;
+  ssh_config_host?: string | null;
+  user?: string | null;
+  port?: number | null;
+  identity_file?: string | null;
+  remote_cwd?: string | null;
+}
+
+export interface ProfilesConfig {
+  default_profile_id?: string | null;
+  last_used_profile_id?: string | null;
+  items: SessionProfile[];
+}
+
+export interface SessionCapabilities {
+  platform: "macos" | "windows" | "linux" | "unknown";
+  shells: string[];
+  wslDistros: string[];
+  sshAvailable: boolean;
+  sshConfigHosts: SshConfigHost[];
+}
+
+export interface SshConfigHost {
+  alias: string;
+  hostname?: string | null;
+  user?: string | null;
+  port?: number | null;
+  identityFile?: string | null;
+}
+
+export interface TerminalConfig {
+  font_family: string;
+  font_size: number;
+  line_height: number;
+  scrollback_lines?: number;
+  replay_buffer_lines?: number;
+  replay_buffer_mb?: number;
+}
+
+export interface ThemeConfig {
+  background: string;
+  foreground: string;
+  cursor: string;
+  selection: string;
+  black: string;
+  red: string;
+  green: string;
+  yellow: string;
+  blue: string;
+  magenta: string;
+  cyan: string;
+  white: string;
+  bright_black: string;
+  bright_red: string;
+  bright_green: string;
+  bright_yellow: string;
+  bright_blue: string;
+  bright_magenta: string;
+  bright_cyan: string;
+  bright_white: string;
+}
+
+export interface LayoutConfig {
+  focused_pane_width: number;
+  animation_ms: number;
+  max_hot_sessions: number;
+}
+
+export interface KeysConfig {
+  prefix: string;
+}
+
+export interface UserConfig {
+  terminal: TerminalConfig;
+  theme: ThemeConfig;
+  layout: LayoutConfig;
+  shell: { default: string };
+  keys: KeysConfig;
+  ai: AiConfig;
+  profiles: ProfilesConfig;
+  onboarding_completed?: boolean;
+}
+
 export type AiEvent =
   | { type: "started"; requestId: string; threadId: string; assistantMessageId: string }
   | { type: "delta"; requestId: string; threadId: string; assistantMessageId: string; content: string }
