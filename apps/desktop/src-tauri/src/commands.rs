@@ -4,20 +4,47 @@ use tauri::State;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::config::{save_config, ConfigErrorState, ConfigState, UserConfig};
+use crate::config::{
+    save_config, ConfigErrorState, ConfigState, SessionProfile, SessionProfileKind, UserConfig,
+};
 use crate::models::*;
 use crate::session_manager::SessionManager;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSessionPayload {
-    pub name: String,
-    pub cwd: String,
-    pub command_type: String, // "shell" or "command"
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub cwd: Option<String>,
+    #[serde(default)]
+    pub command_type: Option<String>, // "shell" or "command"
     pub shell: Option<String>,
     pub program: Option<String>,
     pub args: Option<Vec<String>>,
     pub color: Option<ColorToken>,
+    pub profile_id: Option<String>,
+    pub profile: Option<SessionProfile>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionCapabilities {
+    pub platform: String,
+    pub shells: Vec<String>,
+    pub wsl_distros: Vec<String>,
+    pub ssh_available: bool,
+    pub ssh_config_hosts: Vec<SshConfigHost>,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SshConfigHost {
+    pub alias: String,
+    pub hostname: Option<String>,
+    pub user: Option<String>,
+    pub port: Option<u16>,
+    pub identity_file: Option<String>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -71,33 +98,26 @@ pub async fn session_create(
     payload: CreateSessionPayload,
 ) -> Result<SessionSnapshot, String> {
     eprintln!(
-        "[vibemux] session_create called: name={}, cwd={}, type={}",
-        payload.name, payload.cwd, payload.command_type
+        "[vibemux] session_create called: name={:?}, cwd={:?}, type={:?}, profile_id={:?}",
+        payload.name, payload.cwd, payload.command_type, payload.profile_id
     );
     let cfg = config_state.lock().map_err(|e| e.to_string())?.clone();
-    let command = match payload.command_type.as_str() {
-        "shell" => {
-            let shell = payload
-                .shell
-                .filter(|shell| !shell.trim().is_empty())
-                .unwrap_or_else(|| cfg.shell.default.clone());
-            eprintln!("[vibemux] shell={}", shell);
-            SessionCommand::Shell { shell }
-        }
-        "command" => {
-            let program = payload
-                .program
-                .ok_or("program is required for command type")?;
-            let args = payload.args.unwrap_or_default();
-            SessionCommand::Command { program, args }
-        }
-        other => {
-            return Err(format!(
-                "unknown command type: '{}'. Use 'shell' or 'command'",
-                other
-            ))
-        }
+    let profile = resolve_payload_profile(&payload, &cfg)?;
+    let command = if let Some(profile) = &profile {
+        resolve_profile_command(profile)?
+    } else {
+        resolve_legacy_command(&payload, &cfg)?
     };
+    let session_name = payload
+        .name
+        .clone()
+        .or_else(|| profile.as_ref().map(|profile| profile.name.clone()))
+        .unwrap_or_else(|| "shell".to_string());
+    let session_cwd = payload
+        .cwd
+        .clone()
+        .or_else(|| profile.as_ref().and_then(|profile| profile.cwd.clone()))
+        .unwrap_or_else(default_cwd);
 
     eprintln!("[vibemux] acquiring lock...");
     let max_hot_sessions = cfg.layout.max_hot_sessions as usize;
@@ -108,8 +128,8 @@ pub async fn session_create(
     let mut manager = state.lock().await;
     eprintln!("[vibemux] lock acquired, creating session...");
     let session_id = manager.create_session(
-        payload.name,
-        payload.cwd,
+        session_name,
+        session_cwd,
         command,
         80,
         24,
@@ -126,6 +146,188 @@ pub async fn session_create(
     let snap = session_to_snapshot(session);
     eprintln!("[vibemux] returning snapshot: {:?}", snap);
     Ok(snap)
+}
+
+fn resolve_payload_profile(
+    payload: &CreateSessionPayload,
+    cfg: &UserConfig,
+) -> Result<Option<SessionProfile>, String> {
+    if let Some(profile) = &payload.profile {
+        return Ok(Some(profile.clone()));
+    }
+
+    if let Some(profile_id) = payload
+        .profile_id
+        .as_deref()
+        .filter(|id| !id.trim().is_empty())
+    {
+        return cfg
+            .profiles
+            .items
+            .iter()
+            .find(|profile| profile.id == profile_id)
+            .cloned()
+            .map(Some)
+            .ok_or_else(|| format!("profile not found: {}", profile_id));
+    }
+
+    Ok(None)
+}
+
+fn resolve_legacy_command(
+    payload: &CreateSessionPayload,
+    cfg: &UserConfig,
+) -> Result<SessionCommand, String> {
+    match payload.command_type.as_deref().unwrap_or("shell") {
+        "shell" => {
+            let shell = payload
+                .shell
+                .clone()
+                .filter(|shell| !shell.trim().is_empty())
+                .unwrap_or_else(|| cfg.shell.default.clone());
+            eprintln!("[vibemux] shell={}", shell);
+            Ok(SessionCommand::Shell { shell })
+        }
+        "command" => {
+            let program = payload
+                .program
+                .clone()
+                .ok_or("program is required for command type")?;
+            let args = payload.args.clone().unwrap_or_default();
+            Ok(SessionCommand::Command { program, args })
+        }
+        other => Err(format!(
+            "unknown command type: '{}'. Use 'shell' or 'command'",
+            other
+        )),
+    }
+}
+
+fn resolve_profile_command(profile: &SessionProfile) -> Result<SessionCommand, String> {
+    match profile.kind {
+        SessionProfileKind::LocalShell => {
+            let shell = profile
+                .shell
+                .clone()
+                .filter(|shell| !shell.trim().is_empty())
+                .ok_or_else(|| "local shell profile requires a shell".to_string())?;
+            Ok(SessionCommand::Shell { shell })
+        }
+        SessionProfileKind::Command => {
+            let program = profile
+                .program
+                .clone()
+                .filter(|program| !program.trim().is_empty())
+                .ok_or_else(|| "command profile requires a program".to_string())?;
+            Ok(SessionCommand::Command {
+                program,
+                args: profile.args.clone(),
+            })
+        }
+        SessionProfileKind::Wsl => {
+            let distro = profile
+                .distro
+                .clone()
+                .filter(|distro| !distro.trim().is_empty())
+                .ok_or_else(|| "wsl profile requires a distro".to_string())?;
+            let mut args = vec!["-d".to_string(), distro];
+            if let Some(remote_cwd) = profile
+                .remote_cwd
+                .as_deref()
+                .filter(|cwd| !cwd.trim().is_empty())
+            {
+                args.push("--cd".to_string());
+                args.push(remote_cwd.to_string());
+            }
+            if let Some(shell) = profile
+                .shell
+                .as_deref()
+                .filter(|shell| !shell.trim().is_empty())
+            {
+                args.push("--exec".to_string());
+                args.push(shell.to_string());
+            }
+            Ok(SessionCommand::Command {
+                program: "wsl.exe".to_string(),
+                args,
+            })
+        }
+        SessionProfileKind::Ssh => {
+            let ssh_config_host = profile
+                .ssh_config_host
+                .clone()
+                .filter(|alias| !alias.trim().is_empty());
+            let target = if let Some(alias) = ssh_config_host {
+                alias
+            } else {
+                let host = profile
+                    .host
+                    .clone()
+                    .filter(|host| !host.trim().is_empty())
+                    .ok_or_else(|| "ssh profile requires a host".to_string())?;
+                match profile
+                    .user
+                    .as_deref()
+                    .filter(|user| !user.trim().is_empty())
+                {
+                    Some(user) => format!("{}@{}", user, host),
+                    None => host,
+                }
+            };
+            let mut args = vec![];
+            if profile.ssh_config_host.as_deref().is_none_or(|alias| alias.trim().is_empty()) {
+                if let Some(port) = profile.port {
+                    args.push("-p".to_string());
+                    args.push(port.to_string());
+                }
+                if let Some(identity_file) = profile
+                    .identity_file
+                    .as_deref()
+                    .filter(|identity_file| !identity_file.trim().is_empty())
+                {
+                    args.push("-i".to_string());
+                    args.push(identity_file.to_string());
+                }
+            }
+            if profile
+                .remote_cwd
+                .as_deref()
+                .is_some_and(|cwd| !cwd.trim().is_empty())
+            {
+                args.push("-t".to_string());
+            }
+            args.push(target);
+            if let Some(remote_cwd) = profile
+                .remote_cwd
+                .as_deref()
+                .filter(|cwd| !cwd.trim().is_empty())
+            {
+                args.push(format!("cd {} && exec $SHELL -l", shell_quote(remote_cwd)));
+            }
+            Ok(SessionCommand::Command {
+                program: "ssh".to_string(),
+                args,
+            })
+        }
+    }
+}
+
+fn shell_quote(value: &str) -> String {
+    if value.starts_with('~')
+        || value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || "/._-".contains(ch))
+    {
+        value.to_string()
+    } else {
+        format!("'{}'", value.replace('\'', "'\\''"))
+    }
+}
+
+fn default_cwd() -> String {
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| ".".to_string())
 }
 
 #[tauri::command]
@@ -403,6 +605,156 @@ pub fn detect_shells() -> Vec<String> {
 }
 
 #[tauri::command]
+pub fn detect_session_capabilities() -> SessionCapabilities {
+    SessionCapabilities {
+        platform: current_platform().to_string(),
+        shells: detect_shells(),
+        wsl_distros: detect_wsl_distros(),
+        ssh_available: which::which("ssh").is_ok(),
+        ssh_config_hosts: read_ssh_config_hosts(),
+    }
+}
+
+fn read_ssh_config_hosts() -> Vec<SshConfigHost> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default();
+    if home.is_empty() {
+        return vec![];
+    }
+
+    let path = std::path::Path::new(&home).join(".ssh").join("config");
+    match std::fs::read_to_string(path) {
+        Ok(content) => parse_ssh_config_hosts(&content),
+        Err(_) => vec![],
+    }
+}
+
+fn parse_ssh_config_hosts(content: &str) -> Vec<SshConfigHost> {
+    #[derive(Clone, Default)]
+    struct HostBlock {
+        aliases: Vec<String>,
+        hostname: Option<String>,
+        user: Option<String>,
+        port: Option<u16>,
+        identity_file: Option<String>,
+    }
+
+    fn flush(block: &mut Option<HostBlock>, hosts: &mut Vec<SshConfigHost>) {
+        let Some(current) = block.take() else {
+            return;
+        };
+
+        for alias in current.aliases {
+            if alias.contains('*') || alias.contains('?') || alias == "!" {
+                continue;
+            }
+            hosts.push(SshConfigHost {
+                alias,
+                hostname: current.hostname.clone(),
+                user: current.user.clone(),
+                port: current.port,
+                identity_file: current.identity_file.clone(),
+            });
+        }
+    }
+
+    let mut hosts = vec![];
+    let mut current: Option<HostBlock> = None;
+
+    for raw_line in content.lines() {
+        let line = raw_line.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        let mut parts = line.split_whitespace();
+        let Some(key) = parts.next() else {
+            continue;
+        };
+        let values: Vec<&str> = parts.collect();
+
+        if key.eq_ignore_ascii_case("host") {
+            flush(&mut current, &mut hosts);
+            current = Some(HostBlock {
+                aliases: values.iter().map(|value| value.to_string()).collect(),
+                ..HostBlock::default()
+            });
+            continue;
+        }
+
+        let Some(block) = current.as_mut() else {
+            continue;
+        };
+        let value = values.join(" ");
+        if value.is_empty() {
+            continue;
+        }
+
+        if key.eq_ignore_ascii_case("hostname") {
+            block.hostname = Some(value);
+        } else if key.eq_ignore_ascii_case("user") {
+            block.user = Some(value);
+        } else if key.eq_ignore_ascii_case("port") {
+            block.port = value.parse::<u16>().ok();
+        } else if key.eq_ignore_ascii_case("identityfile") {
+            block.identity_file = Some(value);
+        }
+    }
+
+    flush(&mut current, &mut hosts);
+    hosts
+}
+
+fn current_platform() -> &'static str {
+    #[cfg(target_os = "macos")]
+    {
+        "macos"
+    }
+    #[cfg(target_os = "windows")]
+    {
+        "windows"
+    }
+    #[cfg(target_os = "linux")]
+    {
+        "linux"
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        "unknown"
+    }
+}
+
+fn detect_wsl_distros() -> Vec<String> {
+    #[cfg(target_os = "windows")]
+    {
+        let output = std::process::Command::new("wsl.exe")
+            .args(["-l", "-q"])
+            .output();
+
+        if let Ok(out) = output {
+            if out.status.success() {
+                let raw = String::from_utf8_lossy(&out.stdout).replace('\0', "");
+                return raw
+                    .lines()
+                    .map(|line| line.trim())
+                    .filter(|line| !line.is_empty())
+                    .filter(|line| {
+                        !line.eq_ignore_ascii_case("windows subsystem for linux distributions:")
+                    })
+                    .map(|line| line.to_string())
+                    .collect();
+            }
+        }
+        vec![]
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        vec![]
+    }
+}
+
+#[tauri::command]
 pub fn list_monospace_fonts() -> Vec<String> {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
@@ -460,5 +812,165 @@ fn merge_json(base: &mut serde_json::Value, update: &serde_json::Value) {
                 *entry = v.clone();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{SessionProfile, SessionProfileKind};
+
+    #[test]
+    fn ssh_profile_resolves_to_system_ssh_command() {
+        let profile = SessionProfile {
+            id: "prod".to_string(),
+            name: "prod".to_string(),
+            kind: SessionProfileKind::Ssh,
+            cwd: Some("/Users/me".to_string()),
+            shell: None,
+            program: None,
+            args: vec![],
+            distro: None,
+            host: Some("example.com".to_string()),
+            ssh_config_host: None,
+            user: Some("deploy".to_string()),
+            port: Some(2222),
+            identity_file: Some("~/.ssh/id_ed25519".to_string()),
+            remote_cwd: Some("~/app".to_string()),
+        };
+
+        let command = resolve_profile_command(&profile).expect("ssh profile should resolve");
+
+        assert!(matches!(command, SessionCommand::Command { .. }));
+        if let SessionCommand::Command { program, args } = command {
+            assert_eq!(program, "ssh");
+            assert_eq!(
+                args,
+                vec![
+                    "-p",
+                    "2222",
+                    "-i",
+                    "~/.ssh/id_ed25519",
+                    "-t",
+                    "deploy@example.com",
+                    "cd ~/app && exec $SHELL -l",
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn wsl_profile_resolves_to_wsl_exe_command() {
+        let profile = SessionProfile {
+            id: "ubuntu".to_string(),
+            name: "Ubuntu".to_string(),
+            kind: SessionProfileKind::Wsl,
+            cwd: Some("/Users/me".to_string()),
+            shell: Some("bash".to_string()),
+            program: None,
+            args: vec![],
+            distro: Some("Ubuntu".to_string()),
+            host: None,
+            ssh_config_host: None,
+            user: None,
+            port: None,
+            identity_file: None,
+            remote_cwd: Some("~/work".to_string()),
+        };
+
+        let command = resolve_profile_command(&profile).expect("wsl profile should resolve");
+
+        if let SessionCommand::Command { program, args } = command {
+            assert_eq!(program, "wsl.exe");
+            assert_eq!(
+                args,
+                vec!["-d", "Ubuntu", "--cd", "~/work", "--exec", "bash"]
+            );
+        } else {
+            panic!("expected command profile");
+        }
+    }
+
+    #[test]
+    fn ssh_profile_requires_host() {
+        let profile = SessionProfile {
+            id: "bad".to_string(),
+            name: "bad".to_string(),
+            kind: SessionProfileKind::Ssh,
+            cwd: None,
+            shell: None,
+            program: None,
+            args: vec![],
+            distro: None,
+            host: None,
+            ssh_config_host: None,
+            user: None,
+            port: None,
+            identity_file: None,
+            remote_cwd: None,
+        };
+
+        assert!(resolve_profile_command(&profile)
+            .unwrap_err()
+            .contains("host"));
+    }
+
+    #[test]
+    fn ssh_config_profile_resolves_to_alias_only() {
+        let profile = SessionProfile {
+            id: "prod".to_string(),
+            name: "prod".to_string(),
+            kind: SessionProfileKind::Ssh,
+            cwd: None,
+            shell: None,
+            program: None,
+            args: vec![],
+            distro: None,
+            host: Some("prod.example.com".to_string()),
+            ssh_config_host: Some("prod".to_string()),
+            user: Some("deploy".to_string()),
+            port: Some(2202),
+            identity_file: Some("~/.ssh/prod_ed25519".to_string()),
+            remote_cwd: Some("~/app".to_string()),
+        };
+
+        let command = resolve_profile_command(&profile).expect("ssh config profile should resolve");
+
+        if let SessionCommand::Command { program, args } = command {
+            assert_eq!(program, "ssh");
+            assert_eq!(args, vec!["-t", "prod", "cd ~/app && exec $SHELL -l"]);
+        } else {
+            panic!("expected command profile");
+        }
+    }
+
+    #[test]
+    fn parses_ssh_config_hosts_with_connection_defaults() {
+        let hosts = parse_ssh_config_hosts(
+            r#"
+            Host *
+              User ignored
+
+            Host prod prod-short
+              HostName prod.example.com
+              User deploy
+              Port 2202
+              IdentityFile ~/.ssh/prod_ed25519
+
+            Host staging
+              HostName 10.0.0.5
+              User ubuntu
+            "#,
+        );
+
+        assert_eq!(hosts.len(), 3);
+        assert_eq!(hosts[0].alias, "prod");
+        assert_eq!(hosts[0].hostname.as_deref(), Some("prod.example.com"));
+        assert_eq!(hosts[0].user.as_deref(), Some("deploy"));
+        assert_eq!(hosts[0].port, Some(2202));
+        assert_eq!(hosts[0].identity_file.as_deref(), Some("~/.ssh/prod_ed25519"));
+        assert_eq!(hosts[1].alias, "prod-short");
+        assert_eq!(hosts[1].hostname.as_deref(), Some("prod.example.com"));
+        assert_eq!(hosts[2].alias, "staging");
     }
 }

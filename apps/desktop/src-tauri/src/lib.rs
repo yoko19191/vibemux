@@ -61,6 +61,7 @@ pub fn run() {
             commands::open_url,
             commands::session_set_title,
             commands::detect_shells,
+            commands::detect_session_capabilities,
             commands::list_monospace_fonts,
             ai::ai_list_models,
             ai::ai_list_threads,
