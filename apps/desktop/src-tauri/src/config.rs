@@ -11,6 +11,7 @@ pub struct TerminalConfig {
     pub scrollback_lines: u32,
     pub replay_buffer_lines: u32,
     pub replay_buffer_mb: u32,
+    pub alternate_scroll_mode: String,
 }
 
 impl Default for TerminalConfig {
@@ -22,6 +23,7 @@ impl Default for TerminalConfig {
             scrollback_lines: 10_000,
             replay_buffer_lines: 10_000,
             replay_buffer_mb: 20,
+            alternate_scroll_mode: "off".to_string(),
         }
     }
 }

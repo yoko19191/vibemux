@@ -317,6 +317,16 @@
               onchange={(e) => handleTerminalChange("line_height", parseFloat((e.target as HTMLInputElement).value))}
             />
           </label>
+          <label class="field">
+            <span>Alternate Scroll Mode</span>
+            <select
+              value={config.terminal.alternate_scroll_mode ?? "off"}
+              onchange={(e) => handleTerminalChange("alternate_scroll_mode", (e.target as HTMLSelectElement).value)}
+            >
+              <option value="off">Off — wheel does nothing in TUIs (claude, codex)</option>
+              <option value="arrows">Arrow keys — wheel scrolls less / man / vim</option>
+            </select>
+          </label>
         </div>
       {:else if activeTab === "theme"}
         <div class="section">

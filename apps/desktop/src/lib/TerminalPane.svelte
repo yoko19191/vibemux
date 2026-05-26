@@ -19,6 +19,7 @@
     fontSize?: number;
     lineHeight?: number;
     scrollback?: number;
+    alternateScrollMode?: 'off' | 'arrows';
     theme?: Record<string, string>;
   }
 
@@ -47,6 +48,17 @@
   let textareaPasteController: AbortController | null = null;
   let contextMenuController: AbortController | null = null;
   let rendererType: 'webgl' | 'canvas' = $state('webgl');
+  let webglAddon: WebglAddon | null = null;
+  let webglRecoveryAttempted = false;
+  let webglLastRecoveryAt = 0;
+  let dprMediaQuery: MediaQueryList | null = null;
+  let dprChangeHandler: ((e: MediaQueryListEvent) => void) | null = null;
+  // Track previous cell-affecting metrics so the config $effect knows when to
+  // invalidate the WebGL glyph atlas. Glyphs are baked at the cell dims active
+  // at bake time; if cell dims change, cached glyphs render at the wrong size.
+  let prevFontFamily: string | undefined;
+  let prevFontSize: number | undefined;
+  let prevLineHeight: number | undefined;
 
   // Context menu state
   let contextMenu: { x: number; y: number } | null = $state(null);
@@ -161,6 +173,10 @@
       allowProposedApi: true,
     });
 
+    prevFontFamily = terminal.options.fontFamily as string | undefined;
+    prevFontSize = terminal.options.fontSize as number | undefined;
+    prevLineHeight = terminal.options.lineHeight as number | undefined;
+
     fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
 
@@ -220,19 +236,58 @@
       return true;
     });
 
-    // Try WebGL renderer, fall back to canvas
-    try {
-      const webglAddon = new WebglAddon();
-      webglAddon.onContextLoss(() => {
-        webglAddon.dispose();
-        rendererType = 'canvas';
-        onRendererType?.('canvas');
-      });
-      terminal.loadAddon(webglAddon);
-      rendererType = 'webgl';
-      onRendererType?.('webgl');
-    } catch {
-      // Canvas fallback is automatic
+    // Wheel handling for the alternate screen buffer.
+    // xterm v6 default: wheel events on the alt-buffer get translated into
+    // arrow-key escape sequences (\x1b[A / \x1b[B, or \x1bOA / \x1bOB in DECCKM).
+    // In TUIs like `claude` or `codex` whose focused element is a readline-style
+    // input, those arrows either move the input cursor, cycle history, or render
+    // as literal ^[[A characters. macOS Terminal.app and iTerm2 default to off.
+    terminal.attachCustomWheelEventHandler((ev: WheelEvent) => {
+      if (!terminal) return true;
+      if (terminal.modes.mouseTrackingMode !== 'none') return true;
+      if (terminal.buffer.active.type !== 'alternate') return true;
+      if (terminalConfig?.alternateScrollMode === 'arrows') return true;
+      ev.preventDefault();
+      return false;
+    });
+
+    // Try WebGL renderer, fall back to canvas. Recreatable on context loss.
+    function loadWebgl(): boolean {
+      if (!terminal) return false;
+      try {
+        const addon = new WebglAddon();
+        addon.onContextLoss(() => {
+          // GPU sleep / driver hiccup. Try to recover once within a 10s window;
+          // if it loses again quickly, give up and stay on canvas permanently.
+          addon.dispose();
+          webglAddon = null;
+          const now = Date.now();
+          if (!webglRecoveryAttempted || now - webglLastRecoveryAt > 10_000) {
+            webglRecoveryAttempted = true;
+            webglLastRecoveryAt = now;
+            setTimeout(() => {
+              if (!terminal) return;
+              if (!loadWebgl()) {
+                rendererType = 'canvas';
+                onRendererType?.('canvas');
+              }
+            }, 1000);
+          } else {
+            rendererType = 'canvas';
+            onRendererType?.('canvas');
+          }
+        });
+        terminal.loadAddon(addon);
+        webglAddon = addon;
+        rendererType = 'webgl';
+        onRendererType?.('webgl');
+        return true;
+      } catch {
+        webglAddon = null;
+        return false;
+      }
+    }
+    if (!loadWebgl()) {
       rendererType = 'canvas';
       onRendererType?.('canvas');
     }
@@ -289,6 +344,25 @@
     });
     resizeObserver.observe(containerEl);
 
+    // devicePixelRatio change: window dragged between Retina and non-Retina
+    // displays. The atlas was baked at the old DPR; force a fresh bake at the
+    // new one. matchMedia is the canonical way to be notified — listen for the
+    // current dppx, and re-arm on change since the query string itself becomes
+    // stale once the DPR moves.
+    function armDprListener() {
+      dprMediaQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      dprChangeHandler = () => {
+        webglAddon?.clearTextureAtlas();
+        fitAddon?.fit();
+        if (dprMediaQuery && dprChangeHandler) {
+          dprMediaQuery.removeEventListener('change', dprChangeHandler);
+        }
+        armDprListener();
+      };
+      dprMediaQuery.addEventListener('change', dprChangeHandler);
+    }
+    armDprListener();
+
     // RAF-batched output writing
     let pendingOutput = '';
     let outputRafId: number | null = null;
@@ -320,12 +394,30 @@
     });
   });
 
-  // Apply config changes to running terminal
+  // Apply config changes to running terminal.
+  // When fontFamily/fontSize/lineHeight change the WebGL glyph atlas must be
+  // invalidated — its cached glyphs are baked at the previous cell dimensions
+  // and would otherwise be pasted into mis-sized cells, producing tearing
+  // after scroll. Theme-only or scrollback-only changes skip the clear to
+  // avoid an unnecessary one-frame redraw flicker.
   $effect(() => {
     if (!terminal) return;
-    if (terminalConfig?.fontFamily) terminal.options.fontFamily = terminalConfig.fontFamily;
-    if (terminalConfig?.fontSize) terminal.options.fontSize = terminalConfig.fontSize;
-    if (terminalConfig?.lineHeight) terminal.options.lineHeight = terminalConfig.lineHeight;
+    let cellMetricsChanged = false;
+    if (terminalConfig?.fontFamily && terminalConfig.fontFamily !== prevFontFamily) {
+      terminal.options.fontFamily = terminalConfig.fontFamily;
+      prevFontFamily = terminalConfig.fontFamily;
+      cellMetricsChanged = true;
+    }
+    if (terminalConfig?.fontSize && terminalConfig.fontSize !== prevFontSize) {
+      terminal.options.fontSize = terminalConfig.fontSize;
+      prevFontSize = terminalConfig.fontSize;
+      cellMetricsChanged = true;
+    }
+    if (terminalConfig?.lineHeight && terminalConfig.lineHeight !== prevLineHeight) {
+      terminal.options.lineHeight = terminalConfig.lineHeight;
+      prevLineHeight = terminalConfig.lineHeight;
+      cellMetricsChanged = true;
+    }
     if (terminalConfig?.scrollback) terminal.options.scrollback = terminalConfig.scrollback;
     const currentTheme = terminal.options.theme ?? {};
     const themeUpdate = terminalConfig?.theme ? { ...currentTheme, ...terminalConfig.theme } : { ...currentTheme };
@@ -334,6 +426,9 @@
       themeUpdate.selectionBackground = accentColor + "40";
     }
     terminal.options.theme = themeUpdate;
+    if (cellMetricsChanged) {
+      webglAddon?.clearTextureAtlas();
+    }
     fitAddon?.fit();
   });
 
@@ -341,6 +436,12 @@
     textareaPasteController?.abort();
     contextMenuController?.abort();
     resizeObserver?.disconnect();
+    if (dprMediaQuery && dprChangeHandler) {
+      dprMediaQuery.removeEventListener('change', dprChangeHandler);
+    }
+    dprMediaQuery = null;
+    dprChangeHandler = null;
+    webglAddon = null;
     terminal?.dispose();
   });
 

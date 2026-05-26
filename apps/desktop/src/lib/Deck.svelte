@@ -11,6 +11,7 @@
     fontSize?: number;
     lineHeight?: number;
     scrollback?: number;
+    alternateScrollMode?: 'off' | 'arrows';
     theme?: Record<string, string>;
   }
 

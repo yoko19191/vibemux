@@ -151,6 +151,7 @@ export interface TerminalConfig {
   scrollback_lines?: number;
   replay_buffer_lines?: number;
   replay_buffer_mb?: number;
+  alternate_scroll_mode?: "off" | "arrows";
 }
 
 export interface ThemeConfig {

@@ -51,7 +51,7 @@
   let hotSessionLimitWarning: { limit: number } | null = $state(null);
 
   // Terminal config derived from user config — passed to all TerminalPane instances
-  let terminalConfig: { fontFamily?: string; fontSize?: number; lineHeight?: number; scrollback?: number; theme?: Record<string, string> } = $state({});
+  let terminalConfig: { fontFamily?: string; fontSize?: number; lineHeight?: number; scrollback?: number; alternateScrollMode?: 'off' | 'arrows'; theme?: Record<string, string> } = $state({});
   let layoutConfig: { focusedPaneWidth: number; animationMs: number } = $state({
     focusedPaneWidth: 0.6,
     animationMs: 150,
@@ -107,6 +107,7 @@
       fontSize: cfg.terminal?.font_size,
       lineHeight: cfg.terminal?.line_height,
       scrollback: Number.isFinite(scrollback) && scrollback > 0 ? Math.floor(scrollback) : undefined,
+      alternateScrollMode: (cfg.terminal?.alternate_scroll_mode === 'arrows' ? 'arrows' : 'off') as 'off' | 'arrows',
       theme: {
         background: t.background,
         foreground: t.foreground,
