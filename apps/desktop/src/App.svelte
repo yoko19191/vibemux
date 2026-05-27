@@ -16,6 +16,7 @@
   import type { PrefixKeyMatcher } from "./lib/keymap";
   import { colorMap } from "./lib/colors";
   import { detectDesktopPlatform, isMacOS, primaryShortcutModifier } from "./lib/platform";
+  import { buildFontStack, extractPrimaryFamily } from "./lib/fontStack";
 
   let sessions: SessionSnapshot[] = $state([]);
   let focusedSessionId: string | null = $state(null);
@@ -102,8 +103,14 @@
     if (!cfg) return undefined;
     const t = cfg.theme ?? {};
     const scrollback = Number(cfg.terminal?.scrollback_lines);
+    // Normalise legacy configs that lack the Symbols Nerd Font fallback.
+    // buildFontStack is idempotent: stacks already containing it pass through.
+    const rawFontFamily = cfg.terminal?.font_family as string | undefined;
+    const fontFamily = rawFontFamily
+      ? buildFontStack(extractPrimaryFamily(rawFontFamily))
+      : undefined;
     return {
-      fontFamily: cfg.terminal?.font_family,
+      fontFamily,
       fontSize: cfg.terminal?.font_size,
       lineHeight: cfg.terminal?.line_height,
       scrollback: Number.isFinite(scrollback) && scrollback > 0 ? Math.floor(scrollback) : undefined,

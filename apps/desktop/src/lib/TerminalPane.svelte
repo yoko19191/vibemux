@@ -11,6 +11,7 @@
   import { matchesPrefixKey } from "./keymap";
   import type { PrefixKeyMatcher } from "./keymap";
   import { detectDesktopPlatform, isMacOS } from "./platform";
+  import { extractPrimaryFamily } from "./fontStack";
   import ContextMenu from "./ContextMenu.svelte";
   import type { ContextMenuItem } from "./ContextMenu.svelte";
 
@@ -154,7 +155,30 @@
     closeContextMenu();
   }
 
-  onMount(() => {
+  // Block xterm initialization (and atlas re-bakes) until the requested
+  // primary family is actually available in document.fonts. Otherwise xterm
+  // measures cell width using a fallback font, bakes the WebGL glyph atlas
+  // at those dims, and then the webfont loads a frame later — leaving
+  // wider/narrower glyphs pasted into mis-sized cells (the symptom: random
+  // letter-spacing tearing). 600ms cap keeps user-typed unknown families
+  // from hanging the terminal forever.
+  async function ensureFontLoaded(family: string | undefined, sizePx: number) {
+    if (!family) return;
+    const primary = extractPrimaryFamily(family);
+    if (!primary || primary === 'monospace') return;
+    if (!('fonts' in document)) return;
+    const spec = `${sizePx}px "${primary}"`;
+    try {
+      await Promise.race([
+        document.fonts.load(spec),
+        new Promise((resolve) => setTimeout(resolve, 600)),
+      ]);
+    } catch (e) {
+      console.warn('Font load failed, continuing with fallback:', e);
+    }
+  }
+
+  onMount(async () => {
     const baseTheme = terminalConfig?.theme ?? {
       background: "#111111",
       foreground: "#d9d4c7",
@@ -171,6 +195,12 @@
       fontSize: terminalConfig?.fontSize ?? 14,
       lineHeight: terminalConfig?.lineHeight ?? 1.2,
       allowProposedApi: true,
+      // Render box-drawing and Powerline glyphs (U+2500-259F, U+E0A0-E0D7) as
+      // canvas paths instead of font glyphs. Guarantees pixel-aligned, gap-free
+      // borders and arrows even when the active font ships poor (or no)
+      // versions of these characters — and keeps cell metrics stable since
+      // the renderer no longer depends on the font's advance width for them.
+      customGlyphs: true,
     });
 
     prevFontFamily = terminal.options.fontFamily as string | undefined;
@@ -189,6 +219,11 @@
 
     serializeAddon = new SerializeAddon();
     terminal.loadAddon(serializeAddon);
+
+    await ensureFontLoaded(
+      terminalConfig?.fontFamily,
+      terminalConfig?.fontSize ?? 14,
+    );
 
     terminal.open(containerEl);
 
@@ -403,10 +438,12 @@
   $effect(() => {
     if (!terminal) return;
     let cellMetricsChanged = false;
+    let fontFamilyChanged = false;
     if (terminalConfig?.fontFamily && terminalConfig.fontFamily !== prevFontFamily) {
       terminal.options.fontFamily = terminalConfig.fontFamily;
       prevFontFamily = terminalConfig.fontFamily;
       cellMetricsChanged = true;
+      fontFamilyChanged = true;
     }
     if (terminalConfig?.fontSize && terminalConfig.fontSize !== prevFontSize) {
       terminal.options.fontSize = terminalConfig.fontSize;
@@ -427,9 +464,21 @@
     }
     terminal.options.theme = themeUpdate;
     if (cellMetricsChanged) {
-      webglAddon?.clearTextureAtlas();
+      // If the family changed, the new webfont may still be loading; wait for
+      // it before clearing/refitting so the rebake uses the real glyph metrics.
+      if (fontFamilyChanged) {
+        const size = terminalConfig?.fontSize ?? prevFontSize ?? 14;
+        ensureFontLoaded(terminalConfig?.fontFamily, size).then(() => {
+          webglAddon?.clearTextureAtlas();
+          fitAddon?.fit();
+        });
+      } else {
+        webglAddon?.clearTextureAtlas();
+        fitAddon?.fit();
+      }
+    } else {
+      fitAddon?.fit();
     }
-    fitAddon?.fit();
   });
 
   onDestroy(() => {

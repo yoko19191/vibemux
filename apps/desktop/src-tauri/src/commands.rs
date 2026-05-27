@@ -756,6 +756,19 @@ fn detect_wsl_distros() -> Vec<String> {
 
 #[tauri::command]
 pub fn list_monospace_fonts() -> Vec<String> {
+    // Fonts shipped inside the app bundle (registered via @font-face in
+    // fonts.css). Surfaced first so the picker works even if the user has
+    // no system fonts and no fc-list available — and so users always have
+    // a known-good Nerd Font option without installing anything.
+    let bundled: &[&str] = &[
+        "JetBrains Mono Nerd Font",
+        "Fira Code Nerd Font",
+        "Hack Nerd Font",
+        "JetBrains Mono",
+    ];
+
+    let mut result: Vec<String> = bundled.iter().map(|s| s.to_string()).collect();
+
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         let output = std::process::Command::new("fc-list")
@@ -764,39 +777,50 @@ pub fn list_monospace_fonts() -> Vec<String> {
         if let Ok(out) = output {
             if out.status.success() {
                 let raw = String::from_utf8_lossy(&out.stdout);
-                let mut fonts: Vec<String> = raw
+                let mut sys: Vec<String> = raw
                     .lines()
                     .flat_map(|l| l.split(','))
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty())
                     .collect();
-                fonts.sort();
-                fonts.dedup();
-                if !fonts.is_empty() {
-                    return fonts;
+                sys.sort();
+                sys.dedup();
+                for f in sys {
+                    if !result.iter().any(|b| b.eq_ignore_ascii_case(&f)) {
+                        result.push(f);
+                    }
                 }
+                return result;
             }
         }
-        // fallback preset list
-        vec![
-            "monospace".to_string(),
-            "Menlo".to_string(),
-            "Monaco".to_string(),
-            "Courier New".to_string(),
-            "JetBrains Mono".to_string(),
-            "Fira Code".to_string(),
-            "SF Mono".to_string(),
-        ]
+        // fc-list missing/failed: append a small preset list of likely-installed mono fonts.
+        for f in [
+            "monospace",
+            "Menlo",
+            "Monaco",
+            "Courier New",
+            "Fira Code",
+            "SF Mono",
+        ] {
+            if !result.iter().any(|b| b.eq_ignore_ascii_case(f)) {
+                result.push(f.to_string());
+            }
+        }
+        result
     }
     #[cfg(target_os = "windows")]
     {
-        vec![
-            "Consolas".to_string(),
-            "Courier New".to_string(),
-            "Lucida Console".to_string(),
-            "JetBrains Mono".to_string(),
-            "Fira Code".to_string(),
-        ]
+        for f in [
+            "Consolas",
+            "Courier New",
+            "Lucida Console",
+            "Fira Code",
+        ] {
+            if !result.iter().any(|b| b.eq_ignore_ascii_case(f)) {
+                result.push(f.to_string());
+            }
+        }
+        result
     }
 }
 

@@ -1,17 +1,28 @@
 /**
  * Bundled fonts for terminal rendering.
- * Ensures fonts are available in the production .app bundle where
- * system font access may be restricted.
+ *
+ * Two tiers of fonts ship with Vibemux:
+ *
+ *  1. PRIMARY families — full alphanumeric coverage; user-selectable.
+ *     JetBrains Mono (unpatched), and three Nerd Font "patched" variants
+ *     that include ~9k icons baked into the same family for visual
+ *     consistency: JetBrains Mono Nerd Font, Fira Code Nerd Font, Hack
+ *     Nerd Font.
+ *
+ *  2. ICON FALLBACK — "Symbols Nerd Font" with @font-face restricted by
+ *     unicode-range to icon PUA blocks only. This is appended to every
+ *     font stack by fontStack.ts so that whatever primary the user picks
+ *     (even system Menlo), missing icon glyphs cascade here instead of
+ *     falling through to a proportional sans.
+ *
+ * Menlo is intentionally NOT bundled: it ships with every macOS install.
+ * Registering a same-named @font-face would shadow the system font and
+ * (with font-display: block) blank the terminal during the bundled file's
+ * load, plus corrupt the WebGL glyph atlas. Linux/Windows resolve through
+ * the stack to a system mono.
  */
 
-@font-face {
-  font-family: 'Menlo';
-  src: url('./fonts/Menlo-Regular.ttf') format('truetype');
-  font-weight: 400;
-  font-style: normal;
-  font-display: block;
-}
-
+/* --- Primary: JetBrains Mono (unpatched) --- */
 @font-face {
   font-family: 'JetBrains Mono';
   src: url('./fonts/JetBrainsMono-Regular.woff2') format('woff2');
@@ -19,11 +30,95 @@
   font-style: normal;
   font-display: block;
 }
-
 @font-face {
   font-family: 'JetBrains Mono';
   src: url('./fonts/JetBrainsMono-Bold.woff2') format('woff2');
   font-weight: 700;
   font-style: normal;
   font-display: block;
+}
+
+/* --- Primary: JetBrains Mono Nerd Font (patched, includes icons) --- */
+@font-face {
+  font-family: 'JetBrains Mono Nerd Font';
+  src: url('./fonts/JetBrainsMonoNerdFontMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'JetBrains Mono Nerd Font';
+  src: url('./fonts/JetBrainsMonoNerdFontMono-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+
+/* --- Primary: Fira Code Nerd Font --- */
+@font-face {
+  font-family: 'Fira Code Nerd Font';
+  src: url('./fonts/FiraCodeNerdFontMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Fira Code Nerd Font';
+  src: url('./fonts/FiraCodeNerdFontMono-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+
+/* --- Primary: Hack Nerd Font --- */
+@font-face {
+  font-family: 'Hack Nerd Font';
+  src: url('./fonts/HackNerdFontMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Hack Nerd Font';
+  src: url('./fonts/HackNerdFontMono-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+
+/*
+ * --- Icon fallback: Symbols Nerd Font Mono ---
+ *
+ * unicode-range tells the browser: "only consult this @font-face when
+ * the codepoint is in one of these ranges." The browser still downloads
+ * the file lazily — i.e. only when text actually contains those code
+ * points — so users who never run icon-heavy TUIs pay zero bytes.
+ *
+ * Ranges below cover Nerd Fonts' published icon allocations as of v3.x:
+ *   E000-E00A  Powerline Symbols (private)
+ *   E0A0-E0A2, E0A3 Powerline Extra
+ *   E0B0-E0B3, E0B4-E0C8, E0CA, E0CC-E0D7  Powerline Extra Triangles
+ *   E200-E2A9  Font Awesome Extension
+ *   E300-E3D2, E3D6-E3D7  Weather Icons (legacy)
+ *   E5FA-E6B7  Seti-UI + Custom
+ *   E700-E8EF  Devicons
+ *   EA60-EC1E  Codicons
+ *   ED00-F2FF  Font Awesome (broad span; safe to include whole PUA-A)
+ *   F000-F2E0  Font Awesome (legacy)
+ *   F300-F381  Font Logos
+ *   F400-F533  Octicons
+ *   F0001-F1AF0 Material Design Icons (supplementary plane)
+ *
+ * We coalesce the BMP region into U+E000-F8FF (full PUA) and add the SPUA-A
+ * range; this is broader than strictly needed but means new Nerd Font
+ * releases don't require a CSS update. Real alphanumeric content never
+ * lives in PUA so cascade order is safe.
+ */
+@font-face {
+  font-family: 'Symbols Nerd Font';
+  src: url('./fonts/SymbolsNerdFontMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+E000-F8FF, U+F0000-F1FFF;
 }

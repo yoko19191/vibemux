@@ -2,6 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { presetThemes, type ThemePreset } from "./presetThemes.js";
   import { detectDesktopPlatform, isMacOS } from "./platform";
+  import { buildFontStack, extractPrimaryFamily } from "./fontStack";
   import type {
     AiConfig,
     LayoutConfig,
@@ -123,6 +124,10 @@
 
   function handleTerminalChange(field: keyof TerminalConfig, value: string | number) {
     applyUpdate({ terminal: { [field]: value } });
+  }
+
+  function handleFontFamilyChange(value: string) {
+    applyUpdate({ terminal: { font_family: buildFontStack(value) } });
   }
 
   function handleThemeChange(field: keyof ThemeConfig, value: string) {
@@ -276,26 +281,27 @@
 
     {#if config}
       {#if activeTab === "terminal"}
+        {@const fontPrimary = extractPrimaryFamily(config.terminal.font_family)}
         <div class="section">
           <div class="field">
             <span>Font Family</span>
             <div class="font-field">
               <select
-                value={config.terminal.font_family}
-                onchange={(e) => handleTerminalChange("font_family", (e.target as HTMLSelectElement).value)}
+                value={fontPrimary}
+                onchange={(e) => handleFontFamilyChange((e.target as HTMLSelectElement).value)}
               >
                 {#each systemFonts as font}
-                  <option value={font} selected={font === config.terminal.font_family}>{font}</option>
+                  <option value={font} selected={font === fontPrimary}>{font}</option>
                 {/each}
-                {#if !systemFonts.includes(config.terminal.font_family)}
-                  <option value={config.terminal.font_family} selected>{config.terminal.font_family}</option>
+                {#if !systemFonts.includes(fontPrimary)}
+                  <option value={fontPrimary} selected>{fontPrimary}</option>
                 {/if}
               </select>
               <input
                 type="text"
                 placeholder="or type a font name"
-                value={config.terminal.font_family}
-                onchange={(e) => handleTerminalChange("font_family", (e.target as HTMLInputElement).value)}
+                value={fontPrimary}
+                onchange={(e) => handleFontFamilyChange((e.target as HTMLInputElement).value)}
               />
             </div>
           </div>
