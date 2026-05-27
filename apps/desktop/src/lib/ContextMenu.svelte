@@ -24,6 +24,16 @@
 
   let openSubmenuIdx: number | null = $state(null);
 
+  function portal(node: HTMLElement) {
+    document.body.appendChild(node);
+
+    return {
+      destroy() {
+        node.remove();
+      },
+    };
+  }
+
   function handleItemClick(item: ContextMenuItem) {
     if (item.disabled || item.type === "separator") return;
     if (item.type === "submenu") return; // handled by hover
@@ -34,7 +44,7 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="ctx-overlay" onclick={onClose}>
+<div class="ctx-overlay" use:portal onclick={onClose}>
   <div
     class="ctx-menu"
     style="left: {position.x}px; top: {position.y}px;"

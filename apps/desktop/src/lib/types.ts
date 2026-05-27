@@ -14,6 +14,8 @@ export type AttentionState =
   | "Failed"
   | "Done";
 
+export type NotificationKind = "NeedsInput" | "Done";
+
 export type ColorToken =
   | "Red"
   | "Orange"
@@ -24,6 +26,37 @@ export type ColorToken =
   | "Purple"
   | "Pink";
 
+export type SessionOriginKind = "local" | "ssh" | "wsl" | "command";
+
+export interface TerminalNotificationPayload {
+  title: string;
+  body: string;
+  source: "osc9" | "osc99" | "osc777";
+}
+
+export interface SessionOrigin {
+  kind: SessionOriginKind;
+  profileId: string | null;
+  profileName: string | null;
+  remoteLabel: string | null;
+  badge: string | null;
+}
+
+export interface SessionIdentity {
+  origin: SessionOrigin;
+}
+
+export interface NotificationItem {
+  id: string;
+  sessionId: string;
+  kind: NotificationKind;
+  reason: string;
+  title: string;
+  body: string;
+  createdAt: string;
+  readAt: string | null;
+}
+
 export interface SessionSnapshot {
   id: string;
   name: string;
@@ -33,6 +66,7 @@ export interface SessionSnapshot {
   thermalState: ThermalState;
   processState: ProcessState;
   attentionState: AttentionState;
+  identity: SessionIdentity;
   terminalTitle: string;
   lastActivityAt: string;
 }

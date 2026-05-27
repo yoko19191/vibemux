@@ -14,6 +14,7 @@
   import { extractPrimaryFamily } from "./fontStack";
   import ContextMenu from "./ContextMenu.svelte";
   import type { ContextMenuItem } from "./ContextMenu.svelte";
+  import type { TerminalNotificationPayload } from "./types";
 
   interface TerminalConfig {
     fontFamily?: string;
@@ -36,10 +37,12 @@
       focus: () => void;
       blur: () => void;
     }) => void;
+    onNotification?: (payload: TerminalNotificationPayload) => void;
+    onUserInput?: () => void;
     onRendererType?: (type: 'webgl' | 'canvas') => void;
   }
 
-  let { sessionId, accentColor, terminalConfig, prefixKeyMatcher, onReady, onRendererType }: Props = $props();
+  let { sessionId, accentColor, terminalConfig, prefixKeyMatcher, onReady, onNotification, onUserInput, onRendererType }: Props = $props();
 
   let containerEl: HTMLDivElement;
   let terminal: Terminal | null = null;
@@ -119,6 +122,33 @@
 
   function hasLineBreak(text: string): boolean {
     return /\r\n|\r|\n/.test(text);
+  }
+
+  function emitTerminalNotification(payload: TerminalNotificationPayload) {
+    if (!payload.title.trim() && !payload.body.trim()) return;
+    onNotification?.(payload);
+  }
+
+  function parseOsc777(data: string): { title: string; body: string } | null {
+    const parts = data.split(";");
+    if (parts[0] !== "notify" || parts.length < 3) return null;
+    return {
+      title: parts[1] ?? "",
+      body: parts.slice(2).join(";"),
+    };
+  }
+
+  function parseOsc99(data: string): { title: string; body: string } | null {
+    const payloadStart = data.indexOf(":");
+    if (payloadStart === -1) return null;
+    const params = data.slice(0, payloadStart);
+    const payload = data.slice(payloadStart + 1);
+    if (!payload.trim()) return null;
+
+    if (params.includes("p=title") || params.includes("p=subtitle")) {
+      return { title: payload, body: "" };
+    }
+    return { title: "", body: payload };
   }
 
   function countLines(text: string): number {
@@ -340,6 +370,7 @@
 
     // Send keystrokes to backend
     terminal.onData((data: string) => {
+      onUserInput?.();
       invoke("session_write", { sessionId, data }).catch(console.error);
     });
 
@@ -355,6 +386,24 @@
     });
     terminal.parser.registerOscHandler(2, (data: string) => {
       invoke("session_set_title", { sessionId, title: data }).catch(console.error);
+      return true;
+    });
+    terminal.parser.registerOscHandler(9, (data: string) => {
+      emitTerminalNotification({ title: "", body: data, source: "osc9" });
+      return true;
+    });
+    terminal.parser.registerOscHandler(99, (data: string) => {
+      const notification = parseOsc99(data);
+      if (notification) {
+        emitTerminalNotification({ ...notification, source: "osc99" });
+      }
+      return true;
+    });
+    terminal.parser.registerOscHandler(777, (data: string) => {
+      const notification = parseOsc777(data);
+      if (notification) {
+        emitTerminalNotification({ ...notification, source: "osc777" });
+      }
       return true;
     });
 

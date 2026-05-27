@@ -12,6 +12,8 @@
     { key: "h / ←", description: "Focus previous session" },
     { key: "l / →", description: "Focus next session" },
     { key: "n", description: "New session" },
+    { key: "a", description: "Jump to latest notification" },
+    { key: "o", description: "Open notifications" },
     { key: "b", description: "Detach current session" },
     { key: "j / ↓", description: "Select next detached session" },
     { key: "k / ↑", description: "Select previous detached session" },

@@ -3,7 +3,7 @@
   import ContextMenu from "./ContextMenu.svelte";
   import BusyIndicator from "./BusyIndicator.svelte";
   import type { ContextMenuItem } from "./ContextMenu.svelte";
-  import type { ColorToken, ProcessState } from "./types";
+  import type { ColorToken, ProcessState, TerminalNotificationPayload } from "./types";
   import type { PrefixKeyMatcher } from "./keymap";
   import { colorMap, colorTokens } from "./colors";
   import { invoke } from "@tauri-apps/api/core";
@@ -33,6 +33,8 @@
     animationMs?: number;
     prefixKeyMatcher?: PrefixKeyMatcher;
     onReady?: (api: { writeOutput: (data: string) => void; triggerResize: () => void; serialize: () => string; focus: () => void; blur: () => void }) => void;
+    onNotification?: (payload: TerminalNotificationPayload) => void;
+    onUserInput?: () => void;
     onclick?: () => void;
     ondragstart?: (e: DragEvent) => void;
     ondragover?: (e: DragEvent) => void;
@@ -50,7 +52,7 @@
     sessionId, sessionName, sessionCwd = "", terminalTitle = "", color, processState, isFocused, width,
     left = 0, zIndex = 1,
     isRenaming = false, terminalConfig, animationMs = 150, prefixKeyMatcher,
-    onReady, onclick, ondragstart, ondragover, ondrop, ondragend,
+    onReady, onNotification, onUserInput, onclick, ondragstart, ondragover, ondrop, ondragend,
     onRenameConfirm, onRenameCancel, onStartRename, onPark, onClose, onKill,
   }: Props = $props();
 
@@ -201,7 +203,7 @@
     {/if}
   </div>
   <div class="terminal-container">
-    <TerminalPane {sessionId} accentColor={borderColor} {terminalConfig} {prefixKeyMatcher} {onReady} onRendererType={(t) => (rendererType = t)} />
+    <TerminalPane {sessionId} accentColor={borderColor} {terminalConfig} {prefixKeyMatcher} {onReady} {onNotification} {onUserInput} onRendererType={(t) => (rendererType = t)} />
   </div>
 </div>
 

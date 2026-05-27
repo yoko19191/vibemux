@@ -9,14 +9,16 @@
   import SettingsPanel from "./lib/SettingsPanel.svelte";
   import HelpOverlay from "./lib/HelpOverlay.svelte";
   import Titlebar from "./lib/Titlebar.svelte";
+  import NotificationCenter from "./lib/NotificationCenter.svelte";
   import Onboarding from "./lib/Onboarding.svelte";
   import { onReplayStart, onReplayChunk, onReplayEnd, cancelReplay, isReplaying } from "./lib/terminalReplay";
-  import type { MuxEvent, SessionSnapshot } from "./lib/types";
+  import type { AttentionState, MuxEvent, NotificationItem, NotificationKind, SessionSnapshot, TerminalNotificationPayload } from "./lib/types";
   import { parsePrefixKey, matchesPrefixKey, formatPrefixKey } from "./lib/keymap";
   import type { PrefixKeyMatcher } from "./lib/keymap";
   import { colorMap } from "./lib/colors";
   import { detectDesktopPlatform, isMacOS, primaryShortcutModifier } from "./lib/platform";
   import { buildFontStack, extractPrimaryFamily } from "./lib/fontStack";
+  import { sendSessionNotification } from "./lib/systemNotifications";
 
   let sessions: SessionSnapshot[] = $state([]);
   let focusedSessionId: string | null = $state(null);
@@ -27,6 +29,9 @@
   let showSettings = $state(false);
   let settingsInitialTab: "terminal" | "theme" | "layout" | "keys" | "privacy" | "ai" = $state("terminal");
   let showSearch = $state(false);
+  let showNotifications = $state(false);
+  let notifications: NotificationItem[] = $state([]);
+  let appHasFocus = $state(true);
   type SessionSearchComponentType = typeof import("./lib/SessionSearch.svelte").default;
   let SessionSearchComponent: SessionSearchComponentType | null = $state(null);
   let sessionSearchLoading = $state(false);
@@ -60,23 +65,32 @@
 
   let hotSessions = $derived(sessions.filter((s) => s.thermalState === "Hot"));
   let warmSessions = $derived(sessions.filter((s) => s.thermalState === "Warm"));
+  let focusedSession = $derived(sessions.find((s) => s.id === focusedSessionId && s.thermalState === "Hot") ?? null);
   let focusedAccentHex = $derived.by(() => {
-    const focused = sessions.find((s) => s.id === focusedSessionId && s.thermalState === "Hot");
-    return focused ? (colorMap[focused.color] ?? null) : null;
+    return focusedSession ? (colorMap[focusedSession.color] ?? null) : null;
   });
+  let unreadNotifications = $derived(notifications.filter((item) => !item.readAt).length);
 
   const platform = detectDesktopPlatform();
   const searchShortcut = `${primaryShortcutModifier(platform)}+K`;
 
   let focusedTitle = $derived.by(() => {
-    const s = sessions.find((s) => s.id === focusedSessionId && s.thermalState === "Hot");
+    const s = focusedSession;
     if (!s) return "Vibemux";
     const isRunning = s.processState.type === "Running";
-    const title = s.terminalTitle || s.cwd.replace(/^.*\/([^/]+)$/, "$1") || s.cwd;
+    const title = sessionDisplayTitle(s);
     return isRunning ? `* ${title}` : title;
   });
 
   let focusedAccentColor = $derived(focusedAccentHex ?? "#888");
+  let focusedAttentionState = $derived(focusedSession?.attentionState ?? "Normal");
+  let focusedOriginBadge = $derived(focusedSession?.identity.origin.badge ?? null);
+  let focusedOriginLabel = $derived.by(() => {
+    if (!focusedSession) return null;
+    return focusedSession.identity.origin.remoteLabel
+      ?? focusedSession.identity.origin.profileName
+      ?? focusedSession.identity.origin.badge;
+  });
 
   function hexToRgba(hex: string, alpha: number): string {
     const r = parseInt(hex.slice(1, 3), 16);
@@ -140,6 +154,181 @@
     };
   }
 
+  function shortCwd(cwd: string): string {
+    return cwd.replace(/^.*\/([^/]+)\/?$/, "$1") || cwd;
+  }
+
+  function sessionDisplayTitle(session: SessionSnapshot): string {
+    return session.terminalTitle
+      || session.customName
+      || session.name
+      || shortCwd(session.cwd)
+      || session.cwd;
+  }
+
+  function isNotificationKind(state: AttentionState): state is NotificationKind {
+    return state === "NeedsInput" || state === "Done";
+  }
+
+  function notificationCopy(kind: NotificationKind, title: string): { reason: string; body: string } {
+    switch (kind) {
+      case "NeedsInput":
+        return { reason: "Input needed", body: `${title} is waiting for input.` };
+      case "Done":
+        return { reason: "Session done", body: `${title} finished.` };
+    }
+  }
+
+  function pushNotification(session: SessionSnapshot, kind: NotificationKind, reason: string, body: string) {
+    const title = sessionDisplayTitle(session);
+    const existingUnread = notifications.find((item) =>
+      !item.readAt
+      && item.sessionId === session.id
+      && item.kind === kind
+      && item.body === body
+    );
+    if (existingUnread) return;
+
+    const item: NotificationItem = {
+      id: `${session.id}-${kind}-${Date.now()}`,
+      sessionId: session.id,
+      kind,
+      reason,
+      title,
+      body,
+      createdAt: new Date().toISOString(),
+      readAt: null,
+    };
+
+    notifications = [item, ...notifications].slice(0, 80);
+
+    if (!(appHasFocus && focusedSessionId === session.id)) {
+      void sendSessionNotification(`Vibemux: ${reason}`, body);
+    }
+  }
+
+  function addSessionNotification(session: SessionSnapshot, kind: NotificationKind) {
+    const title = sessionDisplayTitle(session);
+    const copy = notificationCopy(kind, title);
+    pushNotification(session, kind, copy.reason, copy.body);
+  }
+
+  function classifyTerminalNotification(payload: TerminalNotificationPayload): NotificationKind | null {
+    const text = `${payload.title} ${payload.body}`.toLowerCase();
+    const needsInputPatterns = [
+      "agent needs input",
+      "approval required",
+      "approve",
+      "confirm",
+      "continue?",
+      "human approval",
+      "human-in-the-loop",
+      "needs input",
+      "needs review",
+      "passphrase",
+      "password",
+      "permission",
+      "requires input",
+      "review",
+      "waiting",
+      "[y/n]",
+      "(y/n)",
+      "(yes/no)",
+    ];
+    if (needsInputPatterns.some((pattern) => text.includes(pattern))) {
+      return "NeedsInput";
+    }
+
+    const donePatterns = [
+      "agent finished",
+      "build complete",
+      "completed",
+      "complete",
+      "done",
+      "finished",
+      "session complete",
+      "success",
+    ];
+    if (donePatterns.some((pattern) => text.includes(pattern))) {
+      return "Done";
+    }
+
+    return null;
+  }
+
+  function handleTerminalNotification(sessionId: string, payload: TerminalNotificationPayload) {
+    const session = sessions.find((s) => s.id === sessionId);
+    if (!session) return;
+
+    const kind = classifyTerminalNotification(payload);
+    if (!kind) return;
+
+    const title = sessionDisplayTitle(session);
+    const fallback = notificationCopy(kind, title);
+    const reason = payload.title.trim() || fallback.reason;
+    const body = payload.body.trim() || fallback.body;
+    pushNotification(session, kind, reason, body);
+
+    if (kind === "NeedsInput" && session.attentionState !== "NeedsInput") {
+      sessions = sessions.map((s) =>
+        s.id === session.id ? { ...s, attentionState: "NeedsInput" as const } : s
+      );
+    }
+  }
+
+  function handleTerminalInput(sessionId: string) {
+    const session = sessions.find((s) => s.id === sessionId);
+    if (!session || !["NeedsInput", "Active"].includes(session.attentionState)) return;
+    sessions = sessions.map((s) =>
+      s.id === sessionId ? { ...s, attentionState: "Normal" as const } : s
+    );
+  }
+
+  function markNotificationRead(id: string) {
+    const readAt = new Date().toISOString();
+    notifications = notifications.map((item) => item.id === id ? { ...item, readAt } : item);
+  }
+
+  function clearNotification(id: string) {
+    notifications = notifications.filter((item) => item.id !== id);
+  }
+
+  function clearSessionNotifications(sessionId: string) {
+    notifications = notifications.filter((item) => item.sessionId !== sessionId);
+  }
+
+  function clearAllNotifications() {
+    notifications = [];
+  }
+
+  async function jumpToNotification(item: NotificationItem) {
+    const session = sessions.find((s) => s.id === item.sessionId);
+    if (!session) return;
+
+    let jumped = false;
+    if (session.thermalState === "Warm") {
+      jumped = await recallSession(session.id);
+    } else {
+      jumped = await handleFocusSession(session.id);
+    }
+
+    if (jumped) {
+      markNotificationRead(item.id);
+      showNotifications = false;
+      navMode = false;
+    }
+  }
+
+  async function jumpToLatestActionableNotification() {
+    const item = [...notifications]
+      .filter((notification) => !notification.readAt && sessions.some((s) => s.id === notification.sessionId))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+
+    if (item) {
+      await jumpToNotification(item);
+    }
+  }
+
   function ensurePendingReplay(sessionId: string): PendingReplay {
     let pending = pendingReplays.get(sessionId);
     if (!pending) {
@@ -183,18 +372,16 @@
 
   // Dynamic window title
   $effect(() => {
-    const focused = sessions.find((s) => s.id === focusedSessionId && s.thermalState === "Hot");
+    const focused = focusedSession;
     let title = "Vibemux";
     if (focused) {
-      const name = focused.customName ?? focused.name;
       const busy = focused.processState.type === "Running";
-      const dynamic = focused.terminalTitle && focused.terminalTitle !== name ? focused.terminalTitle : null;
-      const shortCwd = focused.cwd.replace(/^.*\/([^/]+)\/?$/, "$1") || focused.cwd;
       const hotCount = hotSessions.length;
       const warmCount = warmSessions.length;
       const sessionInfo = warmCount > 0 ? `[${hotCount}+${warmCount}]` : `[${hotCount}]`;
-      const label = dynamic ?? name;
-      title = busy ? `⚙ ${label} · ${shortCwd} ${sessionInfo} — Vibemux` : `${label} · ${shortCwd} ${sessionInfo} — Vibemux`;
+      const label = sessionDisplayTitle(focused);
+      const prefix = focused.attentionState === "NeedsInput" ? "! " : busy ? "* " : "";
+      title = `${prefix}${label} · ${shortCwd(focused.cwd)} ${sessionInfo} - Vibemux`;
     }
     getCurrentWindow().setTitle(title).catch(() => {});
   });
@@ -278,6 +465,17 @@
           }
         }
       } else if (muxEvent.type === "attentionChanged") {
+        const previous = sessions.find((s) => s.id === muxEvent.sessionId);
+        if (
+          previous
+          && previous.attentionState !== muxEvent.attentionState
+          && isNotificationKind(muxEvent.attentionState)
+        ) {
+          addSessionNotification(
+            { ...previous, attentionState: muxEvent.attentionState },
+            muxEvent.attentionState
+          );
+        }
         sessions = sessions.map((s) =>
           s.id === muxEvent.sessionId ? { ...s, attentionState: muxEvent.attentionState } : s
         );
@@ -422,12 +620,14 @@
     showNewSession = true;
   }
 
-  async function handleFocusSession(sessionId: string) {
+  async function handleFocusSession(sessionId: string): Promise<boolean> {
     try {
       await invoke("session_focus", { sessionId });
       focusedSessionId = sessionId;
+      return true;
     } catch (e) {
       console.error("Failed to focus session:", e);
+      return false;
     }
   }
 
@@ -471,6 +671,18 @@
       case "n":
       case "N":
         requestNewSession();
+        e.preventDefault();
+        break;
+      case "a":
+      case "A":
+        void jumpToLatestActionableNotification();
+        navMode = false;
+        e.preventDefault();
+        break;
+      case "o":
+      case "O":
+        showNotifications = true;
+        navMode = false;
         e.preventDefault();
         break;
       case "X":
@@ -570,6 +782,7 @@
     if (!focusedSessionId) return;
     try {
       await invoke("session_close", { sessionId: focusedSessionId });
+      clearSessionNotifications(focusedSessionId);
       sessions = sessions.filter((s) => s.id !== focusedSessionId);
       terminalApis.delete(focusedSessionId);
       focusedSessionId = sessions.find((s) => s.thermalState === "Hot")?.id ?? null;
@@ -610,16 +823,18 @@
     }
   }
 
-  async function recallSession(sessionId: string) {
+  async function recallSession(sessionId: string): Promise<boolean> {
     ensurePendingReplay(sessionId);
     try {
       await invoke("session_recall", { sessionId });
+      return true;
     } catch (e) {
       pendingReplays.delete(sessionId);
       console.error("Failed to recall session:", e);
       if (String(e).includes("Hot Session limit reached")) {
         hotSessionLimitWarning = { limit: maxHotSessions };
       }
+      return false;
     }
   }
 
@@ -646,6 +861,7 @@
   async function closeSessionById(sessionId: string) {
     try {
       await invoke("session_close", { sessionId });
+      clearSessionNotifications(sessionId);
       sessions = sessions.filter((s) => s.id !== sessionId);
       terminalApis.delete(sessionId);
       if (focusedSessionId === sessionId) {
@@ -658,6 +874,7 @@
 
   async function killSessionById(sessionId: string) {
     await invoke("session_kill", { sessionId });
+    clearSessionNotifications(sessionId);
     sessions = sessions.filter((s) => s.id !== sessionId);
     terminalApis.delete(sessionId);
     if (focusedSessionId === sessionId) {
@@ -691,21 +908,43 @@
   }
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
+<svelte:window
+  onkeydown={handleKeydown}
+  onfocus={() => (appHasFocus = true)}
+  onblur={() => (appHasFocus = false)}
+/>
 
 <main class:has-detached={warmSessions.length > 0}>
   <Titlebar
     prefixKey={prefixKeyDisplay}
     {focusedTitle}
     {focusedAccentColor}
+    {focusedAttentionState}
+    {focusedOriginBadge}
+    {focusedOriginLabel}
+    unreadNotifications={unreadNotifications}
+    notificationsOpen={showNotifications}
     {platform}
     onNewSession={requestNewSession}
     onSearch={openSearch}
+    onToggleNotifications={() => (showNotifications = !showNotifications)}
     onSettings={() => {
       settingsInitialTab = "terminal";
       showSettings = true;
     }}
   />
+
+  {#if showNotifications}
+    <NotificationCenter
+      {notifications}
+      {sessions}
+      onJump={jumpToNotification}
+      onMarkRead={markNotificationRead}
+      onClear={clearNotification}
+      onClearAll={clearAllNotifications}
+      onClose={() => (showNotifications = false)}
+    />
+  {/if}
 
   <div class="content-area" class:has-detached={warmSessions.length > 0}>
     {#if focusedAccentHex}
@@ -733,6 +972,8 @@
         {layoutConfig}
         {prefixKeyMatcher}
         onTerminalReady={handleTerminalReady}
+        onTerminalNotification={handleTerminalNotification}
+        onTerminalInput={handleTerminalInput}
         onFocusSession={handleFocusSession}
         onRenameConfirm={handleRenameConfirm}
         onRenameCancel={handleRenameCancel}

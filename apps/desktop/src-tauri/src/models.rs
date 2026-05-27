@@ -9,6 +9,43 @@ pub enum SessionCommand {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SessionOriginKind {
+    Local,
+    Ssh,
+    Wsl,
+    Command,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionOrigin {
+    pub kind: SessionOriginKind,
+    pub profile_id: Option<String>,
+    pub profile_name: Option<String>,
+    pub remote_label: Option<String>,
+    pub badge: Option<String>,
+}
+
+impl Default for SessionOrigin {
+    fn default() -> Self {
+        Self {
+            kind: SessionOriginKind::Local,
+            profile_id: None,
+            profile_name: None,
+            remote_label: None,
+            badge: None,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionIdentity {
+    pub origin: SessionOrigin,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum ThermalState {
     Hot,
     Warm,
@@ -97,6 +134,7 @@ pub struct Session {
     pub thermal_state: ThermalState,
     pub process_state: ProcessState,
     pub attention_state: AttentionState,
+    pub identity: SessionIdentity,
     pub terminal_title: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

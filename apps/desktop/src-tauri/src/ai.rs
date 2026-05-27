@@ -864,6 +864,7 @@ mod tests {
             thermal_state: ThermalState::Hot,
             process_state: ProcessState::Running,
             attention_state: AttentionState::Normal,
+            identity: crate::models::SessionIdentity::default(),
             terminal_title: "title".to_string(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -871,7 +872,9 @@ mod tests {
         };
         let entries = vec![crate::ring_buffer::RingBufferEntry {
             seq: 1,
-            data: format!("{}\x1b[31mred\x1b[0m", "x".repeat(MAX_CONTEXT_BYTES + 16)).into_bytes().into(),
+            data: format!("{}\x1b[31mred\x1b[0m", "x".repeat(MAX_CONTEXT_BYTES + 16))
+                .into_bytes()
+                .into(),
         }];
         let context = context_from_entries(&session, entries);
         assert!(context.truncated);

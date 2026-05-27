@@ -99,6 +99,7 @@ impl SessionManager {
         name: String,
         cwd: String,
         command: SessionCommand,
+        identity: SessionIdentity,
         cols: u16,
         rows: u16,
         max_hot_sessions: usize,
@@ -137,6 +138,7 @@ impl SessionManager {
             thermal_state: ThermalState::Hot,
             process_state: ProcessState::Running,
             attention_state: AttentionState::Normal,
+            identity,
             terminal_title: String::new(),
             created_at: now,
             updated_at: now,
@@ -193,12 +195,29 @@ impl SessionManager {
         Ok(session_id)
     }
 
-    pub fn write_to_session(&self, session_id: Uuid, data: &[u8]) -> Result<(), String> {
+    pub fn write_to_session(&mut self, session_id: Uuid, data: &[u8]) -> Result<(), String> {
         let managed = self
             .sessions
-            .get(&session_id)
+            .get_mut(&session_id)
             .ok_or_else(|| format!("session {} not found", session_id))?;
-        managed.pty.write(data).map_err(|e| e.to_string())
+        managed.pty.write(data).map_err(|e| e.to_string())?;
+
+        if matches!(
+            managed.session.attention_state,
+            AttentionState::NeedsInput | AttentionState::Active
+        ) {
+            managed.session.attention_state = AttentionState::Normal;
+            managed.session.updated_at = Utc::now();
+            managed
+                .attention_state
+                .store(AttentionState::Normal.to_u8(), Ordering::Release);
+            let _ = self.event_tx.send(MuxEvent::AttentionChanged {
+                session_id,
+                attention_state: AttentionState::Normal,
+            });
+        }
+
+        Ok(())
     }
 
     pub fn resize_session(&self, session_id: Uuid, cols: u16, rows: u16) -> Result<(), String> {
@@ -235,7 +254,9 @@ impl SessionManager {
         if let Some(managed) = self.sessions.get_mut(&session_id) {
             managed.session.attention_state = state.clone();
             managed.session.updated_at = Utc::now();
-            managed.attention_state.store(state.to_u8(), Ordering::Release);
+            managed
+                .attention_state
+                .store(state.to_u8(), Ordering::Release);
         }
     }
 
@@ -351,7 +372,9 @@ impl SessionManager {
 
         managed.session.thermal_state = ThermalState::Warm;
         managed.session.updated_at = Utc::now();
-        managed.thermal_state.store(ThermalState::Warm.to_u8(), Ordering::Release);
+        managed
+            .thermal_state
+            .store(ThermalState::Warm.to_u8(), Ordering::Release);
 
         self.workspace
             .hot_session_ids
@@ -409,8 +432,12 @@ impl SessionManager {
         managed.session.thermal_state = ThermalState::Hot;
         managed.session.attention_state = AttentionState::Normal;
         managed.session.updated_at = Utc::now();
-        managed.thermal_state.store(ThermalState::Hot.to_u8(), Ordering::Release);
-        managed.attention_state.store(AttentionState::Normal.to_u8(), Ordering::Release);
+        managed
+            .thermal_state
+            .store(ThermalState::Hot.to_u8(), Ordering::Release);
+        managed
+            .attention_state
+            .store(AttentionState::Normal.to_u8(), Ordering::Release);
 
         self.workspace
             .warm_session_ids
@@ -512,33 +539,33 @@ impl SessionManager {
             };
 
             let thermal = ThermalState::from_u8(thermal_state.load(Ordering::Relaxed));
+            let text = String::from_utf8_lossy(&data);
+            let new_state = detect_attention_state(&text);
+            if let Some(new_attention) = new_state.clone() {
+                let current = AttentionState::from_u8(attention_state.load(Ordering::Relaxed));
+                if current != new_attention {
+                    attention_state.store(new_attention.to_u8(), Ordering::Release);
+                    let _ = event_tx.send(MuxEvent::AttentionChanged {
+                        session_id,
+                        attention_state: new_attention,
+                    });
+                }
+            }
+
             if thermal == ThermalState::Hot {
                 let _ = event_tx.send(MuxEvent::SessionOutput {
                     session_id,
                     data,
                     seq,
                 });
-            } else if thermal == ThermalState::Warm {
-                let text = String::from_utf8_lossy(&data).to_lowercase();
-                let new_state = detect_attention_state(&text);
-                if let Some(new_attention) = new_state {
-                    let current = AttentionState::from_u8(attention_state.load(Ordering::Relaxed));
-                    if current != new_attention {
-                        attention_state.store(new_attention.to_u8(), Ordering::Release);
-                        let _ = event_tx.send(MuxEvent::AttentionChanged {
-                            session_id,
-                            attention_state: new_attention,
-                        });
-                    }
-                } else {
-                    let current = AttentionState::from_u8(attention_state.load(Ordering::Relaxed));
-                    if current == AttentionState::Normal {
-                        attention_state.store(AttentionState::Active.to_u8(), Ordering::Release);
-                        let _ = event_tx.send(MuxEvent::AttentionChanged {
-                            session_id,
-                            attention_state: AttentionState::Active,
-                        });
-                    }
+            } else if thermal == ThermalState::Warm && new_state.is_none() {
+                let current = AttentionState::from_u8(attention_state.load(Ordering::Relaxed));
+                if current == AttentionState::Normal {
+                    attention_state.store(AttentionState::Active.to_u8(), Ordering::Release);
+                    let _ = event_tx.send(MuxEvent::AttentionChanged {
+                        session_id,
+                        attention_state: AttentionState::Active,
+                    });
                 }
             }
         }
@@ -585,14 +612,33 @@ fn attention_for_process_state(state: &ProcessState) -> AttentionState {
 }
 
 fn detect_attention_state(text: &str) -> Option<AttentionState> {
+    let text = text.to_lowercase();
+
     // NeedsInput patterns take priority
     let needs_input_patterns = [
+        "approval required",
+        "approve?",
+        "confirm?",
         "continue?",
+        "continue (y/n)",
         "do you want",
+        "enter passphrase",
+        "enter password",
+        "human approval",
+        "human-in-the-loop",
+        "manual approval",
+        "needs input",
+        "one-time password",
+        "passphrase",
+        "password:",
+        "password for",
         "press enter",
-        "y/n",
+        "requires input",
+        "sudo password",
+        "verification code",
+        "waiting for input",
         "[y/n]",
-        "[y/n]",
+        "(y/n)",
         "(yes/no)",
     ];
     for pattern in &needs_input_patterns {
@@ -601,13 +647,72 @@ fn detect_attention_state(text: &str) -> Option<AttentionState> {
         }
     }
 
-    // Failed patterns
-    let failed_patterns = ["error", "failed", "panic", "fatal", "exception"];
-    for pattern in &failed_patterns {
-        if text.contains(pattern) {
-            return Some(AttentionState::Failed);
-        }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_password_and_hil_attention() {
+        assert_eq!(
+            detect_attention_state("Password for user:"),
+            Some(AttentionState::NeedsInput)
+        );
+        assert_eq!(
+            detect_attention_state("Human-in-the-loop approval required"),
+            Some(AttentionState::NeedsInput)
+        );
+        assert_eq!(
+            detect_attention_state("Continue? [y/n]"),
+            Some(AttentionState::NeedsInput)
+        );
     }
 
-    None
+    #[test]
+    fn ordinary_error_output_does_not_become_failed_attention() {
+        assert_eq!(
+            detect_attention_state("error loading optional plugin"),
+            None
+        );
+        assert_eq!(
+            detect_attention_state("failed to read cached metadata"),
+            None
+        );
+        assert_eq!(detect_attention_state("fatal: not a git repository"), None);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn write_to_session_clears_actionable_attention() {
+        let (event_tx, _event_rx) = mpsc::unbounded_channel();
+        let mut manager = SessionManager::new(event_tx);
+        let session_id = manager
+            .create_session(
+                "cat".to_string(),
+                ".".to_string(),
+                SessionCommand::Command {
+                    program: "/bin/sh".to_string(),
+                    args: vec!["-c".to_string(), "cat".to_string()],
+                },
+                SessionIdentity::default(),
+                80,
+                24,
+                4,
+                100,
+                1024 * 1024,
+            )
+            .expect("session should start");
+
+        manager.update_attention_state(session_id, AttentionState::NeedsInput);
+        manager
+            .write_to_session(session_id, b"\n")
+            .expect("write should succeed");
+
+        let session = manager.get_session(session_id).expect("session");
+        assert_eq!(session.attention_state, AttentionState::Normal);
+
+        let _ = manager.kill_session(session_id);
+    }
 }

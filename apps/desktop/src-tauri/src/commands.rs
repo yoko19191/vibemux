@@ -58,6 +58,7 @@ pub struct SessionSnapshot {
     pub thermal_state: ThermalState,
     pub process_state: ProcessState,
     pub attention_state: AttentionState,
+    pub identity: SessionIdentity,
     pub terminal_title: String,
     pub last_activity_at: String,
 }
@@ -86,6 +87,7 @@ fn session_to_snapshot(session: &crate::models::Session) -> SessionSnapshot {
         thermal_state: session.thermal_state.clone(),
         process_state: session.process_state.clone(),
         attention_state: session.attention_state.clone(),
+        identity: session.identity.clone(),
         terminal_title: session.terminal_title.clone(),
         last_activity_at: session.last_activity_at.to_rfc3339(),
     }
@@ -108,6 +110,7 @@ pub async fn session_create(
     } else {
         resolve_legacy_command(&payload, &cfg)?
     };
+    let identity = build_session_identity(profile.as_ref(), &command);
     let session_name = payload
         .name
         .clone()
@@ -131,6 +134,7 @@ pub async fn session_create(
         session_name,
         session_cwd,
         command,
+        identity,
         80,
         24,
         max_hot_sessions,
@@ -201,6 +205,157 @@ fn resolve_legacy_command(
             other
         )),
     }
+}
+
+fn build_session_identity(
+    profile: Option<&SessionProfile>,
+    command: &SessionCommand,
+) -> SessionIdentity {
+    SessionIdentity {
+        origin: build_session_origin(profile, command),
+    }
+}
+
+fn build_session_origin(
+    profile: Option<&SessionProfile>,
+    command: &SessionCommand,
+) -> SessionOrigin {
+    if let Some(profile) = profile {
+        return match profile.kind {
+            SessionProfileKind::Ssh => SessionOrigin {
+                kind: SessionOriginKind::Ssh,
+                profile_id: Some(profile.id.clone()),
+                profile_name: Some(profile.name.clone()),
+                remote_label: ssh_profile_remote_label(profile),
+                badge: Some("SSH".to_string()),
+            },
+            SessionProfileKind::Wsl => SessionOrigin {
+                kind: SessionOriginKind::Wsl,
+                profile_id: Some(profile.id.clone()),
+                profile_name: Some(profile.name.clone()),
+                remote_label: profile.distro.clone(),
+                badge: None,
+            },
+            SessionProfileKind::Command => {
+                if is_ssh_command(command) {
+                    SessionOrigin {
+                        kind: SessionOriginKind::Ssh,
+                        profile_id: Some(profile.id.clone()),
+                        profile_name: Some(profile.name.clone()),
+                        remote_label: ssh_command_remote_label(command),
+                        badge: Some("SSH".to_string()),
+                    }
+                } else {
+                    SessionOrigin {
+                        kind: SessionOriginKind::Command,
+                        profile_id: Some(profile.id.clone()),
+                        profile_name: Some(profile.name.clone()),
+                        remote_label: None,
+                        badge: None,
+                    }
+                }
+            }
+            SessionProfileKind::LocalShell => SessionOrigin {
+                kind: SessionOriginKind::Local,
+                profile_id: Some(profile.id.clone()),
+                profile_name: Some(profile.name.clone()),
+                remote_label: None,
+                badge: None,
+            },
+        };
+    }
+
+    if is_ssh_command(command) {
+        return SessionOrigin {
+            kind: SessionOriginKind::Ssh,
+            profile_id: None,
+            profile_name: None,
+            remote_label: ssh_command_remote_label(command),
+            badge: Some("SSH".to_string()),
+        };
+    }
+
+    match command {
+        SessionCommand::Shell { .. } => SessionOrigin::default(),
+        SessionCommand::Command { .. } => SessionOrigin {
+            kind: SessionOriginKind::Command,
+            profile_id: None,
+            profile_name: None,
+            remote_label: None,
+            badge: None,
+        },
+    }
+}
+
+fn ssh_profile_remote_label(profile: &SessionProfile) -> Option<String> {
+    if let Some(alias) = profile
+        .ssh_config_host
+        .as_deref()
+        .filter(|host| !host.trim().is_empty())
+    {
+        return Some(alias.to_string());
+    }
+
+    let host = profile
+        .host
+        .as_deref()
+        .filter(|host| !host.trim().is_empty())?;
+    let label = match profile
+        .user
+        .as_deref()
+        .filter(|user| !user.trim().is_empty())
+    {
+        Some(user) => format!("{}@{}", user, host),
+        None => host.to_string(),
+    };
+    Some(match profile.port {
+        Some(port) => format!("{}:{}", label, port),
+        None => label,
+    })
+}
+
+fn is_ssh_command(command: &SessionCommand) -> bool {
+    let SessionCommand::Command { program, .. } = command else {
+        return false;
+    };
+    command_basename(program) == "ssh"
+}
+
+fn ssh_command_remote_label(command: &SessionCommand) -> Option<String> {
+    let SessionCommand::Command { args, .. } = command else {
+        return None;
+    };
+
+    let mut skip_next = false;
+    for arg in args {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+
+        if arg == "-p" || arg == "-i" || arg == "-F" || arg == "-J" || arg == "-l" {
+            skip_next = true;
+            continue;
+        }
+        if arg.starts_with('-') {
+            continue;
+        }
+        if arg.contains('=') {
+            continue;
+        }
+
+        return Some(arg.clone());
+    }
+
+    None
+}
+
+fn command_basename(program: &str) -> String {
+    std::path::Path::new(program)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(program)
+        .to_ascii_lowercase()
 }
 
 fn resolve_profile_command(profile: &SessionProfile) -> Result<SessionCommand, String> {
@@ -275,7 +430,11 @@ fn resolve_profile_command(profile: &SessionProfile) -> Result<SessionCommand, S
                 }
             };
             let mut args = vec![];
-            if profile.ssh_config_host.as_deref().is_none_or(|alias| alias.trim().is_empty()) {
+            if profile
+                .ssh_config_host
+                .as_deref()
+                .is_none_or(|alias| alias.trim().is_empty())
+            {
                 if let Some(port) = profile.port {
                     args.push("-p".to_string());
                     args.push(port.to_string());
@@ -352,7 +511,7 @@ pub async fn session_write(
 ) -> Result<(), String> {
     let uuid = Uuid::parse_str(&session_id)
         .map_err(|_| format!("invalid session id: '{}'", session_id))?;
-    let manager = state.lock().await;
+    let mut manager = state.lock().await;
     manager.write_to_session(uuid, data.as_bytes())
 }
 
@@ -810,12 +969,7 @@ pub fn list_monospace_fonts() -> Vec<String> {
     }
     #[cfg(target_os = "windows")]
     {
-        for f in [
-            "Consolas",
-            "Courier New",
-            "Lucida Console",
-            "Fira Code",
-        ] {
+        for f in ["Consolas", "Courier New", "Lucida Console", "Fira Code"] {
             if !result.iter().any(|b| b.eq_ignore_ascii_case(f)) {
                 result.push(f.to_string());
             }
@@ -969,6 +1123,56 @@ mod tests {
     }
 
     #[test]
+    fn ssh_profile_builds_ssh_origin_identity() {
+        let profile = SessionProfile {
+            id: "prod".to_string(),
+            name: "Production".to_string(),
+            kind: SessionProfileKind::Ssh,
+            cwd: None,
+            shell: None,
+            program: None,
+            args: vec![],
+            distro: None,
+            host: Some("example.com".to_string()),
+            ssh_config_host: None,
+            user: Some("deploy".to_string()),
+            port: Some(2222),
+            identity_file: None,
+            remote_cwd: None,
+        };
+        let command = resolve_profile_command(&profile).expect("ssh command");
+        let identity = build_session_identity(Some(&profile), &command);
+
+        assert_eq!(identity.origin.kind, SessionOriginKind::Ssh);
+        assert_eq!(identity.origin.badge.as_deref(), Some("SSH"));
+        assert_eq!(identity.origin.profile_name.as_deref(), Some("Production"));
+        assert_eq!(
+            identity.origin.remote_label.as_deref(),
+            Some("deploy@example.com:2222")
+        );
+    }
+
+    #[test]
+    fn direct_ssh_command_builds_ssh_origin_identity() {
+        let command = SessionCommand::Command {
+            program: "/usr/bin/ssh".to_string(),
+            args: vec![
+                "-p".to_string(),
+                "2222".to_string(),
+                "deploy@example.com".to_string(),
+            ],
+        };
+        let identity = build_session_identity(None, &command);
+
+        assert_eq!(identity.origin.kind, SessionOriginKind::Ssh);
+        assert_eq!(identity.origin.badge.as_deref(), Some("SSH"));
+        assert_eq!(
+            identity.origin.remote_label.as_deref(),
+            Some("deploy@example.com")
+        );
+    }
+
+    #[test]
     fn parses_ssh_config_hosts_with_connection_defaults() {
         let hosts = parse_ssh_config_hosts(
             r#"
@@ -992,7 +1196,10 @@ mod tests {
         assert_eq!(hosts[0].hostname.as_deref(), Some("prod.example.com"));
         assert_eq!(hosts[0].user.as_deref(), Some("deploy"));
         assert_eq!(hosts[0].port, Some(2202));
-        assert_eq!(hosts[0].identity_file.as_deref(), Some("~/.ssh/prod_ed25519"));
+        assert_eq!(
+            hosts[0].identity_file.as_deref(),
+            Some("~/.ssh/prod_ed25519")
+        );
         assert_eq!(hosts[1].alias, "prod-short");
         assert_eq!(hosts[1].hostname.as_deref(), Some("prod.example.com"));
         assert_eq!(hosts[2].alias, "staging");

@@ -3,7 +3,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import DeckPane from "./DeckPane.svelte";
   import { calculateDeckLayout } from "./deckLayout";
-  import type { SessionSnapshot, ColorToken, ProcessState } from "./types";
+  import type { SessionSnapshot, ColorToken, ProcessState, TerminalNotificationPayload } from "./types";
   import type { PrefixKeyMatcher } from "./keymap";
 
   interface TerminalConfig {
@@ -28,6 +28,8 @@
     layoutConfig?: LayoutConfig;
     prefixKeyMatcher?: PrefixKeyMatcher;
     onTerminalReady?: (sessionId: string, api: { writeOutput: (data: string) => void; triggerResize: () => void; serialize: () => string; focus: () => void; blur: () => void }) => void;
+    onTerminalNotification?: (sessionId: string, payload: TerminalNotificationPayload) => void;
+    onTerminalInput?: (sessionId: string) => void;
     onFocusSession?: (sessionId: string) => void;
     onRenameConfirm?: (sessionId: string, name: string) => void;
     onRenameCancel?: () => void;
@@ -40,7 +42,7 @@
   let {
     sessions, focusedSessionId,
     renamingSessionId = null, terminalConfig, layoutConfig = { focusedPaneWidth: 0.6, animationMs: 150 }, prefixKeyMatcher,
-    onTerminalReady, onFocusSession,
+    onTerminalReady, onTerminalNotification, onTerminalInput, onFocusSession,
     onRenameConfirm, onRenameCancel, onStartRename,
     onPark, onClose, onKill,
   }: Props = $props();
@@ -176,6 +178,8 @@
       animationMs={layoutConfig.animationMs}
       {prefixKeyMatcher}
       onReady={(api) => onTerminalReady?.(layout.sessionId, api)}
+      onNotification={(payload) => onTerminalNotification?.(layout.sessionId, payload)}
+      onUserInput={() => onTerminalInput?.(layout.sessionId)}
       onclick={() => onFocusSession?.(layout.sessionId)}
       ondragstart={(e) => handleDragStart(layout.sessionId, e)}
       ondragover={(e) => handleDragOverPane(layout.sessionId, e)}
